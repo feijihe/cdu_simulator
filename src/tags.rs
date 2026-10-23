@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 pub struct PointTable {
     pub meta: Meta,
+    /// 设备拓扑；省略时只能用 place.loop / place.branch 描述传感器位置
+    #[serde(default)]
+    pub topology: Option<Topology>,
     #[serde(default)]
     pub plant: PlantConfig,
     #[serde(default)]
@@ -224,6 +227,15 @@ pub enum LoopSide {
     Secondary,
 }
 
+impl LoopSide {
+    pub fn label(self) -> &'static str {
+        match self {
+            LoopSide::Primary => "primary",
+            LoopSide::Secondary => "secondary",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Branch {
@@ -231,28 +243,306 @@ pub enum Branch {
     PostHx,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+impl Branch {
+    pub fn label(self) -> &'static str {
+        match self {
+            Branch::PreHx => "pre_hx",
+            Branch::PostHx => "post_hx",
+        }
+    }
+}
+
+/// 传感器位置。推荐用 `segment` 引用 `topology.segments` 的 id；
+/// 没有 topology 的旧点表可以继续用 `loop` + `branch`。
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Place {
-    #[serde(rename = "loop")]
-    pub loop_side: LoopSide,
-    pub branch: Branch,
+    #[serde(rename = "loop", default, skip_serializing_if = "Option::is_none")]
+    pub loop_side: Option<LoopSide>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<Branch>,
+    /// 管段 id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment: Option<String>,
     /// 同一管段内的顺序，沿流向递增
     #[serde(default)]
     pub order: i32,
 }
 
 impl Place {
-    pub fn loop_label(&self) -> &'static str {
-        match self.loop_side {
-            LoopSide::Primary => "primary",
-            LoopSide::Secondary => "secondary",
+    pub fn loop_label(&self) -> Option<&'static str> {
+        self.loop_side.map(LoopSide::label)
+    }
+
+    pub fn branch_label(&self) -> Option<&'static str> {
+        self.branch.map(Branch::label)
+    }
+}
+
+/// 系统图的设备拓扑。管段描述「有哪些管路、属于哪个回路、流向哪边」，
+/// 设备描述「装在哪个管段的什么位置、对应哪些点位」。
+///
+/// 传感器仍然放在 `tags[].place`，通过 `segment` 挂到管段上；
+/// 设备与传感器的 `order` 共用一条坐标轴，渲染时按 order 沿流向排布。
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct Topology {
+    #[serde(default)]
+    pub segments: Vec<Segment>,
+    #[serde(default)]
+    pub equipment: Vec<Equipment>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Segment {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(rename = "loop")]
+    pub loop_side: LoopSide,
+    pub branch: Branch,
+    /// 图上流向；省略时按「一次侧进 / 二次侧出朝板换」推导
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Direction>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Direction {
+    Forward,
+    Reverse,
+}
+
+impl Direction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Direction::Forward => "forward",
+            Direction::Reverse => "reverse",
         }
     }
 
+    /// 默认流向：一次侧进水与二次侧供液朝板换，另两条离开板换。
+    fn default_for(loop_side: LoopSide, branch: Branch) -> Self {
+        match (loop_side, branch) {
+            (LoopSide::Primary, Branch::PreHx) | (LoopSide::Secondary, Branch::PostHx) => {
+                Direction::Forward
+            }
+            _ => Direction::Reverse,
+        }
+    }
+}
+
+impl Segment {
+    pub fn loop_label(&self) -> &'static str {
+        self.loop_side.label()
+    }
+
     pub fn branch_label(&self) -> &'static str {
-        match self.branch {
-            Branch::PreHx => "pre_hx",
-            Branch::PostHx => "post_hx",
+        self.branch.label()
+    }
+
+    /// 配置值，缺省按回路与板换前后推导。
+    pub fn direction(&self) -> Direction {
+        self.direction
+            .unwrap_or_else(|| Direction::default_for(self.loop_side, self.branch))
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Equipment {
+    HeatExchanger(HeatExchanger),
+    Valve(Valve),
+    Pump(Pump),
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HeatExchanger {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Valve {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// 安装管段
+    pub segment: String,
+    /// 管段内位置
+    #[serde(default)]
+    pub order: i32,
+    /// 开度指令（AO）
+    pub cmd: String,
+    /// 开度反馈（AI）
+    pub pos: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Pump {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// 安装管段
+    pub segment: String,
+    /// 管段内位置；同 order 的泵按并联画
+    #[serde(default)]
+    pub order: i32,
+    /// 启停命令（DO）
+    pub run_cmd: String,
+    /// 运行反馈（DI）
+    pub run: String,
+    /// 转速指令（AO）
+    pub speed_cmd: String,
+    /// 故障反馈（DI，选装）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fault: Option<String>,
+}
+
+impl Equipment {
+    pub fn id(&self) -> &str {
+        match self {
+            Equipment::HeatExchanger(e) => &e.id,
+            Equipment::Valve(e) => &e.id,
+            Equipment::Pump(e) => &e.id,
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            Equipment::HeatExchanger(e) => &e.label,
+            Equipment::Valve(e) => &e.label,
+            Equipment::Pump(e) => &e.label,
+        }
+    }
+
+    pub fn label_mut(&mut self) -> &mut String {
+        match self {
+            Equipment::HeatExchanger(e) => &mut e.label,
+            Equipment::Valve(e) => &mut e.label,
+            Equipment::Pump(e) => &mut e.label,
+        }
+    }
+
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            Equipment::HeatExchanger(_) => "heat_exchanger",
+            Equipment::Valve(_) => "valve",
+            Equipment::Pump(_) => "pump",
+        }
+    }
+
+    pub fn segment(&self) -> Option<&str> {
+        match self {
+            Equipment::HeatExchanger(_) => None,
+            Equipment::Valve(e) => Some(&e.segment),
+            Equipment::Pump(e) => Some(&e.segment),
+        }
+    }
+
+    pub fn order(&self) -> Option<i32> {
+        match self {
+            Equipment::HeatExchanger(_) => None,
+            Equipment::Valve(e) => Some(e.order),
+            Equipment::Pump(e) => Some(e.order),
+        }
+    }
+
+    /// 设备引用的点位，用于校验与打印。
+    pub fn tag_refs(&self) -> Vec<(&'static str, &str)> {
+        match self {
+            Equipment::HeatExchanger(_) => Vec::new(),
+            Equipment::Valve(e) => vec![("cmd", &e.cmd), ("pos", &e.pos)],
+            Equipment::Pump(e) => {
+                let mut refs = vec![
+                    ("run_cmd", e.run_cmd.as_str()),
+                    ("run", e.run.as_str()),
+                    ("speed_cmd", e.speed_cmd.as_str()),
+                ];
+                if let Some(fault) = &e.fault {
+                    refs.push(("fault", fault.as_str()));
+                }
+                refs
+            }
+        }
+    }
+}
+
+impl Topology {
+    pub fn segment(&self, id: &str) -> Option<&Segment> {
+        self.segments.iter().find(|s| s.id == id)
+    }
+
+    /// 补全可省略字段，保证序列化给前端的拓扑是完整的。
+    pub fn fill_defaults(&mut self) {
+        for seg in &mut self.segments {
+            if seg.label.is_empty() {
+                seg.label = seg.id.clone();
+            }
+            if seg.direction.is_none() {
+                seg.direction = Some(seg.direction());
+            }
+        }
+        for eq in &mut self.equipment {
+            if eq.label().is_empty() {
+                let id = eq.id().to_string();
+                *eq.label_mut() = id;
+            }
+        }
+    }
+
+    /// `--dump-points` 时打印拓扑摘要。
+    pub fn print_summary(&self) {
+        let count = |kind: &str| {
+            self.equipment
+                .iter()
+                .filter(|e| e.kind_label() == kind)
+                .count()
+        };
+        println!(
+            "拓扑: {} 条管段, {} 台设备 (板换 {}, 比例阀 {}, 泵 {})",
+            self.segments.len(),
+            self.equipment.len(),
+            count("heat_exchanger"),
+            count("valve"),
+            count("pump")
+        );
+        println!(
+            "{:<10} {:<10} {:<10} {:<8} LABEL",
+            "SEG", "LOOP", "BRANCH", "DIR"
+        );
+        for seg in &self.segments {
+            println!(
+                "{:<10} {:<10} {:<10} {:<8} {}",
+                seg.id,
+                seg.loop_label(),
+                seg.branch_label(),
+                seg.direction().label(),
+                seg.label
+            );
+        }
+        println!();
+        println!("{:<6} {:<16} {:<12} TAGS", "ID", "TYPE", "SEGMENT");
+        for eq in &self.equipment {
+            let location = match (eq.segment(), eq.order()) {
+                (Some(seg), Some(order)) => format!("{seg}#{order}"),
+                _ => "-".to_string(),
+            };
+            let mut tags = eq
+                .tag_refs()
+                .iter()
+                .map(|(role, id)| format!("{role}={id}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if tags.is_empty() {
+                tags = "-".to_string();
+            }
+            println!(
+                "{:<6} {:<16} {:<12} {}",
+                eq.id(),
+                eq.kind_label(),
+                location,
+                tags
+            );
         }
     }
 }
@@ -475,17 +765,24 @@ impl PointTable {
 }
 
 impl PointTable {
+    /// 从 YAML 文本解析并校验点表。`base_unit` 在这里固化，后续改单位不影响模型含义。
+    pub fn parse(text: &str) -> Result<Self> {
+        let mut table: PointTable = serde_yaml::from_str(text).context("解析点表失败")?;
+        for tag in &mut table.tags {
+            tag.base_unit = tag.unit.clone().unwrap_or_default();
+        }
+        if let Some(topology) = table.topology.as_mut() {
+            topology.fill_defaults();
+        }
+        table.validate()?;
+        Ok(table)
+    }
+
     /// 只读 tags.yaml，不叠加 overrides.yaml。
     pub fn load_plain(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("读取 {} 失败", path.display()))?;
-        let mut table: PointTable = serde_yaml::from_str(&text)
-            .with_context(|| format!("解析 {} 失败", path.display()))?;
-        for tag in &mut table.tags {
-            tag.base_unit = tag.unit.clone().unwrap_or_default();
-        }
-        table.validate()?;
-        Ok(table)
+        Self::parse(&text).with_context(|| format!("解析 {} 失败", path.display()))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -563,6 +860,153 @@ impl PointTable {
                 );
             }
         }
+
+        self.validate_topology()?;
+        Ok(())
+    }
+
+    /// 校验拓扑与点位引用：
+    /// - 管段 id 唯一，设备 id 唯一；
+    /// - 恰好 1 台板换、最多 1 个比例阀、至少 1 台泵；
+    /// - 设备引用的点位存在且方向（AI/AO/DI/DO）、可写性正确；
+    /// - 传感器的 place.segment 存在，且 loop/branch 与管段定义一致（如果同时写了）。
+    fn validate_topology(&self) -> Result<()> {
+        let Some(topo) = &self.topology else {
+            for tag in &self.tags {
+                if let Some(place) = &tag.place {
+                    if place.segment.is_some() {
+                        bail!("点 {} 使用了 place.segment，但点表没有 topology 段", tag.id);
+                    }
+                    if place.loop_side.is_none() || place.branch.is_none() {
+                        bail!("点 {} 的 place 需要同时给出 loop 与 branch", tag.id);
+                    }
+                }
+            }
+            return Ok(());
+        };
+
+        if topo.segments.is_empty() {
+            bail!("topology.segments 不能为空");
+        }
+
+        let mut segments: HashMap<&str, &Segment> = HashMap::new();
+        for seg in &topo.segments {
+            if seg.id.trim().is_empty() {
+                bail!("topology.segments 中存在空 id");
+            }
+            if segments.insert(seg.id.as_str(), seg).is_some() {
+                bail!("重复的管段 id: {}", seg.id);
+            }
+        }
+
+        let mut equipment_ids: HashMap<&str, ()> = HashMap::new();
+        let mut hx_count = 0;
+        let mut valve_count = 0;
+        let mut pump_count = 0;
+
+        for eq in &topo.equipment {
+            if eq.id().trim().is_empty() {
+                bail!("topology.equipment 中存在空 id");
+            }
+            if equipment_ids.insert(eq.id(), ()).is_some() {
+                bail!("重复的设备 id: {}", eq.id());
+            }
+
+            if let Some(segment) = eq.segment() {
+                if !segments.contains_key(segment) {
+                    bail!("设备 {} 引用了不存在的管段 {}", eq.id(), segment);
+                }
+            }
+
+            match eq {
+                Equipment::HeatExchanger(_) => hx_count += 1,
+                Equipment::Valve(v) => {
+                    valve_count += 1;
+                    self.expect_tag(&v.cmd, "比例阀开度指令", Kind::Ao, true)?;
+                    self.expect_tag(&v.pos, "比例阀开度反馈", Kind::Ai, false)?;
+                }
+                Equipment::Pump(p) => {
+                    pump_count += 1;
+                    self.expect_tag(&p.run_cmd, "泵启停命令", Kind::Do, true)?;
+                    self.expect_tag(&p.run, "泵运行反馈", Kind::Di, false)?;
+                    self.expect_tag(&p.speed_cmd, "泵转速指令", Kind::Ao, true)?;
+                    if let Some(fault) = &p.fault {
+                        self.expect_tag(fault, "泵故障反馈", Kind::Di, false)?;
+                    }
+                }
+            }
+        }
+
+        if hx_count != 1 {
+            bail!("topology 需要且只能有 1 台 heat_exchanger，当前 {hx_count} 台");
+        }
+        if valve_count > 1 {
+            bail!("当前只支持 1 个比例阀，topology 中有 {valve_count} 个");
+        }
+        if pump_count == 0 {
+            bail!("topology 至少需要 1 台 pump");
+        }
+
+        for tag in &self.tags {
+            let Some(place) = &tag.place else {
+                continue;
+            };
+            match (&place.segment, place.loop_side, place.branch) {
+                (Some(id), loop_side, branch) => {
+                    let segment = segments
+                        .get(id.as_str())
+                        .with_context(|| format!("点 {} 的 place.segment {} 不存在", tag.id, id))?;
+                    if let Some(loop_side) = loop_side {
+                        if loop_side != segment.loop_side {
+                            bail!(
+                                "点 {} 的 place.loop ({}) 与管段 {} 的 loop ({}) 不一致",
+                                tag.id,
+                                loop_side.label(),
+                                id,
+                                segment.loop_label()
+                            );
+                        }
+                    }
+                    if let Some(branch) = branch {
+                        if branch != segment.branch {
+                            bail!(
+                                "点 {} 的 place.branch ({}) 与管段 {} 的 branch ({}) 不一致",
+                                tag.id,
+                                branch.label(),
+                                id,
+                                segment.branch_label()
+                            );
+                        }
+                    }
+                }
+                (None, Some(_), Some(_)) => {}
+                (None, _, _) => bail!(
+                    "点 {} 的 place 需要 segment，或同时给出 loop 与 branch",
+                    tag.id
+                ),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn expect_tag(&self, id: &str, role: &str, kind: Kind, writable: bool) -> Result<()> {
+        let tag = self
+            .tags
+            .iter()
+            .find(|t| t.id == id)
+            .with_context(|| format!("{role}点 {} 不在点表中", id))?;
+        if tag.kind != kind {
+            bail!(
+                "{role}点 {} 应为 {}，实际为 {}",
+                id,
+                kind.label(),
+                tag.kind.label()
+            );
+        }
+        if writable && !tag.writable {
+            bail!("{role}点 {} 必须标记 writable: true", id);
+        }
         Ok(())
     }
 
@@ -590,9 +1034,16 @@ impl PointTable {
             println!("  note: {note}");
         }
         println!();
+        if let Some(topo) = &self.topology {
+            topo.print_summary();
+            println!();
+        } else {
+            println!("拓扑: 未配置（系统图按 place.loop / place.branch 渲染）");
+            println!();
+        }
         println!(
-            "{:<18} {:<4} {:<4} {:<6} {:<6} {:<12} {:<10} {:<18} {}",
-            "ID", "DIR", "FC", "ADDR", "UNIT", "RANGE", "RAW", "PLACE", "STATE"
+            "{:<18} {:<4} {:<4} {:<6} {:<6} {:<12} {:<10} {:<18} STATE",
+            "ID", "DIR", "FC", "ADDR", "UNIT", "RANGE", "RAW", "PLACE"
         );
 
         for tag in &self.tags {
@@ -616,7 +1067,15 @@ impl PointTable {
             let place = tag
                 .place
                 .as_ref()
-                .map(|p| format!("{}/{}#{}", p.loop_label(), p.branch_label(), p.order))
+                .map(
+                    |p| match (p.segment.as_deref(), p.loop_label(), p.branch_label()) {
+                        (Some(seg), _, _) => format!("{seg}#{}", p.order),
+                        (None, Some(loop_label), Some(branch_label)) => {
+                            format!("{loop_label}/{branch_label}#{}", p.order)
+                        }
+                        _ => format!("#{}", p.order),
+                    },
+                )
                 .unwrap_or_default();
             println!(
                 "{:<18} {:<4} {:<4} {:<6} {:<6} {:<12} {:<10} {:<18} {}",
@@ -631,5 +1090,135 @@ impl PointTable {
                 state
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: &str = r#"
+meta: { name: test, version: "0" }
+tags:
+  - { id: VALVE_CMD, desc: 阀位指令, kind: ao, unit: "%", range: [0, 100], writable: true, modbus: { fc: 3, addr: 200 } }
+  - { id: VALVE_POS, desc: 阀位反馈, kind: ai, unit: "%", range: [0, 100], modbus: { fc: 3, addr: 116 } }
+  - { id: PUMP_RUN_CMD, desc: 泵启停, kind: do, writable: true, modbus: { fc: 1, addr: 16 } }
+  - { id: PUMP_RUN, desc: 泵运行, kind: di, modbus: { fc: 1, addr: 0 } }
+  - { id: PUMP_SPEED_CMD, desc: 泵转速, kind: ao, unit: "%", range: [0, 100], writable: true, modbus: { fc: 3, addr: 201 } }
+  - { id: T11, desc: 温度, kind: ai, unit: "°C", range: [0, 80], place: { segment: s_in, order: 10 }, modbus: { fc: 3, addr: 101 } }
+topology:
+  segments:
+    - { id: s_in, loop: secondary, branch: pre_hx, label: 回水 }
+    - { id: s_out, loop: secondary, branch: post_hx }
+  equipment:
+    - { id: HX1, type: heat_exchanger }
+    - { id: V1, type: valve, segment: s_in, order: 5, cmd: VALVE_CMD, pos: VALVE_POS }
+    - { id: P1, type: pump, segment: s_out, order: 20, run_cmd: PUMP_RUN_CMD, run: PUMP_RUN, speed_cmd: PUMP_SPEED_CMD }
+"#;
+
+    fn error(yaml: &str) -> String {
+        PointTable::parse(yaml).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn parses_topology_and_fills_defaults() {
+        let table = PointTable::parse(BASE).unwrap();
+        let topo = table.topology.as_ref().unwrap();
+
+        assert_eq!(topo.segments.len(), 2);
+        assert_eq!(topo.segments[0].direction(), Direction::Reverse);
+        assert_eq!(topo.segments[1].direction(), Direction::Forward);
+        // 省略 label 时回落到 id；方向在解析阶段固化，便于直接序列化
+        assert_eq!(topo.segments[1].label, "s_out");
+        assert_eq!(topo.segments[0].direction, Some(Direction::Reverse));
+
+        let kinds: Vec<_> = topo.equipment.iter().map(Equipment::kind_label).collect();
+        assert_eq!(kinds, ["heat_exchanger", "valve", "pump"]);
+
+        // 内部 tag 枚举序列化成带 type 字段的对象，前端按 type 选图标
+        let json = serde_json::to_value(topo).unwrap();
+        assert_eq!(json["equipment"][1]["type"], "valve");
+        assert_eq!(json["equipment"][2]["speed_cmd"], "PUMP_SPEED_CMD");
+    }
+
+    #[test]
+    fn sensor_resolves_place_from_segment() {
+        let table = PointTable::parse(BASE).unwrap();
+        let tag = table.tags.iter().find(|t| t.id == "T11").unwrap();
+        let place = tag.place.as_ref().unwrap();
+        assert_eq!(place.segment.as_deref(), Some("s_in"));
+        assert_eq!(place.loop_label(), None);
+        assert_eq!(
+            table
+                .topology
+                .as_ref()
+                .unwrap()
+                .segment("s_in")
+                .map(Segment::branch_label),
+            Some("pre_hx")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_segment() {
+        let yaml = BASE.replace(
+            "    - { id: s_out, loop: secondary, branch: post_hx }",
+            "    - { id: s_in, loop: secondary, branch: post_hx }",
+        );
+        assert!(error(&yaml).contains("重复的管段"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn rejects_unknown_tag_in_equipment() {
+        let yaml = BASE.replace("cmd: VALVE_CMD", "cmd: MISSING");
+        assert!(error(&yaml).contains("不在点表中"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn rejects_wrong_tag_direction() {
+        let yaml = BASE.replace("speed_cmd: PUMP_SPEED_CMD", "speed_cmd: VALVE_POS");
+        assert!(error(&yaml).contains("应为 AO"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn rejects_place_contradicting_segment() {
+        let yaml = BASE.replace(
+            "place: { segment: s_in, order: 10 }",
+            "place: { segment: s_in, loop: primary, order: 10 }",
+        );
+        assert!(error(&yaml).contains("不一致"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn bundled_config_is_valid() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/tags.yaml");
+        let table = PointTable::load_plain(&path).unwrap();
+        let topology = table.topology.expect("config/tags.yaml 应带 topology");
+        assert_eq!(topology.segments.len(), 4);
+        assert_eq!(topology.equipment.len(), 4);
+    }
+
+    #[test]
+    fn rejects_segment_without_topology() {
+        let yaml = r#"
+meta: { name: test, version: "0" }
+tags:
+  - { id: T11, desc: 温度, kind: ai, unit: "°C", range: [0, 80], place: { segment: s_in, order: 1 }, modbus: { fc: 3, addr: 101 } }
+"#;
+        assert!(error(yaml).contains("没有 topology"), "{}", error(yaml));
+    }
+
+    #[test]
+    fn rejects_incomplete_place_without_topology() {
+        let yaml = r#"
+meta: { name: test, version: "0" }
+tags:
+  - { id: T11, desc: 温度, kind: ai, unit: "°C", range: [0, 80], place: { order: 1 }, modbus: { fc: 3, addr: 101 } }
+"#;
+        assert!(
+            error(yaml).contains("同时给出 loop 与 branch"),
+            "{}",
+            error(yaml)
+        );
     }
 }

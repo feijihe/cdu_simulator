@@ -27,7 +27,7 @@ cargo build --release
 | `--bind` | `0.0.0.0:1502` | Modbus 监听地址 |
 | `--http` | `0.0.0.0:8080` | Web 监听地址 |
 | `--unit` | `1` | 日志里显示的 unit id；实际接受任意 unit id |
-| `--dump-points` | | 打印点表、地址与信号量程后退出 |
+| `--dump-points` | | 打印拓扑、点表、地址与信号量程后退出 |
 | `--no-noise` | | 关闭传感器噪声（测试用） |
 | `--no-overrides` | | 忽略 `config/overrides.yaml`（测试用） |
 | `--cold` | | 忽略点表里的上电初始命令，从全零开始（测试用） |
@@ -88,29 +88,38 @@ signal:
 
 保存走 `PUT /api/tags/{id}`，后端先校验地址冲突与量程，再写入 `config/overrides.yaml`，重启后自动叠加到 `tags.yaml` 上。`tags.yaml` 本身不会被改动；想恢复默认，删掉 `config/overrides.yaml` 即可。
 
-### 系统图由点表驱动
+### 系统图由拓扑驱动
 
-每个传感器用 `place` 声明它在哪条管段上：
+`config/tags.yaml` 里的 `topology` 描述管段和装在管段上的设备，传感器则挂在管段的某个位置：
 
 ```yaml
-- id: T22
-  desc: 二次侧供液温度（主控量）
-  kind: ai
-  unit: "°C"
-  range: [0, 80]
-  place: { loop: secondary, branch: post_hx, order: 10 }
-  modbus: { fc: 3, addr: 111 }
+topology:
+  segments:
+    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水 }
+    - { id: p_out, loop: primary,   branch: post_hx, label: 一次侧出水 }
+    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水 }
+    - { id: s_out, loop: secondary, branch: post_hx, label: 二次侧供液 }
+
+  equipment:
+    - { id: HX1, type: heat_exchanger, label: 板式换热器 }
+    - { id: V1, type: valve, segment: p_out, order: 15,
+        cmd: VALVE_CMD, pos: VALVE_POS }
+    - { id: P1, type: pump, segment: s_out, order: 5,
+        run_cmd: PUMP1_RUN_CMD, run: PUMP1_RUN,
+        speed_cmd: PUMP1_SPEED_CMD, fault: PUMP1_FAULT }
 ```
 
-- `loop`：`primary` / `secondary`
-- `branch`：`pre_hx`（板换前）/ `post_hx`（板换后）
-- `order`：同一管段内沿流向递增
+- `segments`：管段 id、所属回路、板换前/后、图上流向。`direction` 省略时按「一次侧进 / 二次侧供液朝板换」推导。
+- `equipment`：`heat_exchanger` / `valve` / `pump`，用 `segment` + `order` 定位；同一管段上 `order` 相同的多台泵按并联绘制。
+- 传感器位置：`place: { segment: s_in, order: 40 }`。旧写法 `place: { loop, branch, order }` 仍然兼容。
 
-前端把点按四条管段分组，再按 `order` 等距排布；间距不够时自动交错成 1–3 排。**新增传感器只改 `tags.yaml`，删点直接删条目，前端不用动**。没有 `place` 的点（液位、阀位、命令点）只出现在点位表里，不进系统图。
+前端把传感器按 `order` 沿管段等距排布；间距不够时自动交错成 1–3 排。**新增传感器只改 `tags.yaml`，删点直接删条目，前端不用动**。没有 `place` 的点（液位、阀位、命令点）只出现在点位表里，不进系统图。
 
-系统图只画传感器、比例阀和双泵；水箱、过滤器、单向阀、安全阀这些非传感器部件不画，它们的点位（如 `LEVEL`、`SAFETY_VALVE_OPEN`）仍在点位表里可查。
+`--dump-points` 先打印拓扑（管段、设备、设备引用的点位），再打印点表；`GET /api/topology` 返回同一份拓扑的 JSON。加载时会校验：管段/设备 id 唯一、恰好 1 台板换、至多 1 个比例阀、至少 1 台泵，设备引用的点位存在且 AI/AO/DI/DO 方向与可写性正确，传感器 `place.segment` 存在且与管段定义一致。
 
-`--dump-points` 会打印 `PLACE` 列，方便核对；编辑弹窗里也会显示该点当前的位置。
+系统图只画管段、传感器、板换、比例阀和泵；水箱、过滤器、单向阀、安全阀这些非传感器部件不画，它们的点位（如 `LEVEL`、`SAFETY_VALVE_OPEN`）仍在点位表里可查。
+
+> 当前进度：拓扑已解析、校验并随 `--dump-points` / API 输出；前端暂时仍用解析出的 `loop`/`branch` 画四条固定管段，第 2 阶段改为直接按 `segments`/`equipment` 渲染。
 
 ## Modbus 映射
 
@@ -207,7 +216,7 @@ node web/scripts/shot.mjs http://127.0.0.1:8080/ docs/ui.png
 ```
 config/tags.yaml      点表（唯一真相源）
 config/overrides.yaml 页面修改后的覆盖（自动生成，可删）
-src/tags.rs           点表加载、校验、工程值 ↔ 原始信号换算
+src/tags.rs           点表 + 拓扑加载、校验、工程值 ↔ 原始信号换算
 src/state.rs          当前值 + 寄存器读写 + 快照 + 点位编辑
 src/plant.rs          水力 / 热工模型
 src/modbus.rs         Modbus TCP 从站（FC1/3/5/6/15/16）
@@ -225,4 +234,5 @@ docs/                 系统分析、实施方案、界面截图
 - 水箱液位恒为 60%，未做质量平衡；安全阀只置位，不泄放。
 - 页面可以写命令点（阀门、泵），但传感器过程值仍由模型产生，不能强制覆盖。
 - `place` 目前只能在 `tags.yaml` 里改，页面上不提供编辑。
+- 系统图仍按四条固定管段渲染；`topology` 已能解析和输出，但前端还没改成按 `segments`/`equipment` 动态排版。
 - 未做多 unit id、FC2/FC4 点位。

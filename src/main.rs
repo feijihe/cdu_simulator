@@ -174,7 +174,7 @@ cdu-sim — CDU 模拟器
       --bind <addr>     Modbus 监听地址，默认 0.0.0.0:1502
       --http <addr>     Web 监听地址，默认 0.0.0.0:8080
       --unit <id>       Modbus unit id，默认 1
-      --dump-points     打印点表与 Modbus 地址映射后退出
+      --dump-points     打印点表、拓扑与 Modbus 地址映射后退出
       --no-noise        关闭传感器噪声（测试用）
       --no-overrides    忽略 config/overrides.yaml（测试用）
       --cold            忽略上电初始命令，从全零开始（测试用）

@@ -35,6 +35,50 @@ plant:
   facility_supply_c: 30
   valve_stroke_s: 90
 
+# 设备拓扑：系统图由 segments / equipment 渲染，换机型主要改这一段。
+#   segments  管段：回路、板换前后、图上流向。direction 省略时按
+#             「一次侧进 / 二次侧供液朝板换」自动推导。
+#   equipment 设备：挂在哪条管段、管段内 order、对应哪些点位。
+#             同一管段上 order 相同的多台泵按并联绘制。
+#   sensors   在 tags[].place 里用 { segment, order } 挂到管段上。
+topology:
+  segments:
+    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水 }
+    - { id: p_out, loop: primary,   branch: post_hx, label: 一次侧出水 }
+    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水 }
+    - { id: s_out, loop: secondary, branch: post_hx, label: 二次侧供液 }
+
+  equipment:
+    - { id: HX1, type: heat_exchanger, label: 板式换热器 }
+
+    - id: V1
+      type: valve
+      label: 比例阀
+      segment: p_out
+      order: 15
+      cmd: VALVE_CMD
+      pos: VALVE_POS
+
+    - id: P1
+      type: pump
+      label: 泵 1
+      segment: s_out
+      order: 5
+      run_cmd: PUMP1_RUN_CMD
+      run: PUMP1_RUN
+      speed_cmd: PUMP1_SPEED_CMD
+      fault: PUMP1_FAULT
+
+    - id: P2
+      type: pump
+      label: 泵 2
+      segment: s_out
+      order: 5
+      run_cmd: PUMP2_RUN_CMD
+      run: PUMP2_RUN
+      speed_cmd: PUMP2_SPEED_CMD
+      fault: PUMP2_FAULT
+
 tags:
   # ---------------- 一次侧 ----------------
   - id: P10
@@ -44,7 +88,7 @@ tags:
     range: [0, 150]
     presence: optional
     present: true
-    place: { loop: primary, branch: pre_hx, order: 10 }
+    place: { segment: p_in, order: 10 }
     modbus: { fc: 3, addr: 100 }
 
   - id: P11
@@ -52,7 +96,7 @@ tags:
     kind: ai
     unit: PSI
     range: [0, 150]
-    place: { loop: primary, branch: pre_hx, order: 20 }
+    place: { segment: p_in, order: 20 }
     modbus: { fc: 3, addr: 101 }
 
   - id: Q1
@@ -61,7 +105,7 @@ tags:
     unit: LPM
     range: [0, 300]
     noise_sigma: 0.15
-    place: { loop: primary, branch: pre_hx, order: 30 }
+    place: { segment: p_in, order: 30 }
     modbus: { fc: 3, addr: 102 }
 
   - id: T11
@@ -69,7 +113,7 @@ tags:
     kind: ai
     unit: "°C"
     range: [0, 80]
-    place: { loop: primary, branch: pre_hx, order: 40 }
+    place: { segment: p_in, order: 40 }
     modbus: { fc: 3, addr: 103 }
 
   - id: T12
@@ -77,7 +121,7 @@ tags:
     kind: ai
     unit: "°C"
     range: [0, 80]
-    place: { loop: primary, branch: post_hx, order: 10 }
+    place: { segment: p_out, order: 10 }
     modbus: { fc: 3, addr: 104 }
 
   - id: P12
@@ -85,7 +129,7 @@ tags:
     kind: ai
     unit: PSI
     range: [0, 150]
-    place: { loop: primary, branch: post_hx, order: 20 }
+    place: { segment: p_out, order: 20 }
     modbus: { fc: 3, addr: 105 }
 
   - id: P13
@@ -95,7 +139,7 @@ tags:
     range: [0, 150]
     presence: optional
     present: true
-    place: { loop: primary, branch: post_hx, order: 30 }
+    place: { segment: p_out, order: 30 }
     modbus: { fc: 3, addr: 106 }
 
   # ---------------- 二次侧 ----------------
@@ -106,7 +150,7 @@ tags:
     range: [0, 150]
     presence: optional
     present: true
-    place: { loop: secondary, branch: pre_hx, order: 10 }
+    place: { segment: s_in, order: 10 }
     modbus: { fc: 3, addr: 107 }
 
   - id: P21
@@ -114,7 +158,7 @@ tags:
     kind: ai
     unit: PSI
     range: [0, 150]
-    place: { loop: secondary, branch: pre_hx, order: 20 }
+    place: { segment: s_in, order: 20 }
     modbus: { fc: 3, addr: 108 }
 
   - id: Q2
@@ -123,7 +167,7 @@ tags:
     unit: LPM
     range: [0, 300]
     noise_sigma: 0.15
-    place: { loop: secondary, branch: pre_hx, order: 30 }
+    place: { segment: s_in, order: 30 }
     modbus: { fc: 3, addr: 109 }
 
   - id: T21
@@ -131,7 +175,7 @@ tags:
     kind: ai
     unit: "°C"
     range: [0, 80]
-    place: { loop: secondary, branch: pre_hx, order: 40 }
+    place: { segment: s_in, order: 40 }
     modbus: { fc: 3, addr: 110 }
 
   - id: PH
@@ -141,7 +185,7 @@ tags:
     range: [0, 14]
     presence: optional
     present: false
-    place: { loop: secondary, branch: pre_hx, order: 50 }
+    place: { segment: s_in, order: 50 }
     modbus: { fc: 3, addr: 115 }
 
   - id: T22
@@ -149,7 +193,7 @@ tags:
     kind: ai
     unit: "°C"
     range: [0, 80]
-    place: { loop: secondary, branch: post_hx, order: 10 }
+    place: { segment: s_out, order: 10 }
     modbus: { fc: 3, addr: 111 }
 
   - id: P22
@@ -157,7 +201,7 @@ tags:
     kind: ai
     unit: PSI
     range: [0, 150]
-    place: { loop: secondary, branch: post_hx, order: 20 }
+    place: { segment: s_out, order: 20 }
     modbus: { fc: 3, addr: 112 }
 
   - id: P23
@@ -167,7 +211,7 @@ tags:
     range: [0, 150]
     presence: optional
     present: true
-    place: { loop: secondary, branch: post_hx, order: 30 }
+    place: { segment: s_out, order: 30 }
     modbus: { fc: 3, addr: 113 }
 
   # ---------------- 执行器反馈 ----------------

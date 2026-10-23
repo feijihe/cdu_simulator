@@ -2,8 +2,11 @@ export type PointKind = "AI" | "AO" | "DI" | "DO";
 export type SignalKind = "current" | "voltage" | "adc" | "rtd";
 
 export interface Place {
-  loop: "primary" | "secondary";
-  branch: "pre_hx" | "post_hx";
+  /** 旧字段：没有 topology 时使用；有 segment 时由后端按管段补全 */
+  loop?: "primary" | "secondary";
+  branch?: "pre_hx" | "post_hx";
+  /** topology.segments 中的管段 id */
+  segment?: string;
   order: number;
 }
 

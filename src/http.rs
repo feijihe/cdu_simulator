@@ -37,6 +37,7 @@ struct BoundaryPatch {
 pub fn serve(addr: SocketAddr, state: AppState) -> std::io::Result<()> {
     let app = Router::new()
         .route("/api/points", get(points))
+        .route("/api/topology", get(topology))
         .route("/api/points/{id}", put(put_point))
         .route("/api/plant", put(put_boundary).delete(clear_boundary))
         .route("/api/tags/{id}", put(patch_tag))
@@ -57,6 +58,12 @@ pub fn serve(addr: SocketAddr, state: AppState) -> std::io::Result<()> {
 async fn points(State(state): State<AppState>) -> impl IntoResponse {
     let guard = state.read().unwrap();
     Json(guard.snapshot())
+}
+
+/// 静态拓扑，前端加载一次即可；点表没配 topology 时返回 null。
+async fn topology(State(state): State<AppState>) -> impl IntoResponse {
+    let guard = state.read().unwrap();
+    Json(guard.table.topology.clone())
 }
 
 async fn put_point(

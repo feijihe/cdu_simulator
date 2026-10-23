@@ -78,9 +78,13 @@ pub struct TagPatch {
 
 #[derive(Serialize)]
 pub struct PlaceInfo {
-    #[serde(rename = "loop")]
-    pub loop_side: &'static str,
-    pub branch: &'static str,
+    #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    pub loop_side: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<&'static str>,
+    /// place 里配置的管段 id（用于按 topology 渲染）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segment: Option<String>,
     pub order: i32,
 }
 
@@ -425,10 +429,22 @@ impl SimState {
                     addr: tag.modbus.addr,
                     signal_kind: kind,
                     signal_range: sig.range,
-                    place: tag.place.as_ref().map(|p| PlaceInfo {
-                        loop_side: p.loop_label(),
-                        branch: p.branch_label(),
-                        order: p.order,
+                    place: tag.place.as_ref().map(|p| {
+                        // segment 只写了管段时，从拓扑补出 loop/branch，前端按管段渲染前仍可用旧字段
+                        let segment = p.segment.as_deref().and_then(|id| {
+                            self.table
+                                .topology
+                                .as_ref()
+                                .and_then(|topo| topo.segment(id))
+                        });
+                        PlaceInfo {
+                            loop_side: p.loop_label().or_else(|| segment.map(|s| s.loop_label())),
+                            branch: p
+                                .branch_label()
+                                .or_else(|| segment.map(|s| s.branch_label())),
+                            segment: p.segment.clone(),
+                            order: p.order,
+                        }
                     }),
                 }
             })

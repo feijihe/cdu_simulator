@@ -139,7 +139,11 @@ export default function TagEditor({ point, onClose }: Props) {
             <div className="mt-0.5 text-[11px] text-muted-foreground">{point.desc}</div>
             {point.place && (
               <div className="mt-0.5 text-[10px] text-muted-foreground/80">
-                系统图位置：{point.place.loop} / {point.place.branch} / order {point.place.order}
+                系统图位置：
+                {point.place.segment ??
+                  `${point.place.loop ?? "?"} / ${point.place.branch ?? "?"}`}
+                {" / order "}
+                {point.place.order}
               </div>
             )}
           </div>
