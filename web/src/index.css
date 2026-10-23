@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 189 94% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 189 94% 40%;
+    --radius: 0.75rem;
+
+    /* 系统图配色 */
+    --pid-track: #f1f5f9;
+    --pid-chip: #ffffff;
+    --pid-chip-active: #e0f2fe;
+    --pid-border: #cbd5e1;
+    --pid-text: #0f172a;
+    --pid-active-text: #0e7490;
+    --pid-muted: #475569;
+    --pid-dim: #64748b;
+    --pid-accent: #0891b2;
+    --pid-actuator: #e2e8f0;
+    --pipe-primary: #0284c7;
+    --pipe-secondary: #ea580c;
+    --flow-dash: #0f172a;
+    --ok: #059669;
+    --ok-soft: #10b981;
+    --danger: #dc2626;
+    --hx-a: #e0f2fe;
+    --hx-mid: #f8fafc;
+    --hx-b: #ffedd5;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 40% 9%;
+    --card-foreground: 210 40% 98%;
+    --primary: 189 94% 43%;
+    --primary-foreground: 222 47% 6%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 189 94% 43%;
+
+    --pid-track: #020617;
+    --pid-chip: #0f172a;
+    --pid-chip-active: #0c4a56;
+    --pid-border: #334155;
+    --pid-text: #e2e8f0;
+    --pid-active-text: #a5f3fc;
+    --pid-muted: #94a3b8;
+    --pid-dim: #64748b;
+    --pid-accent: #22d3ee;
+    --pid-actuator: #1e293b;
+    --pipe-primary: #38bdf8;
+    --pipe-secondary: #fb923c;
+    --flow-dash: #f8fafc;
+    --ok: #34d399;
+    --ok-soft: #6ee7b7;
+    --danger: #f87171;
+    --hx-a: #0b2a3a;
+    --hx-mid: #0f172a;
+    --hx-b: #3a1d0b;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+}
+
+@keyframes rot {
+  to {
+    transform: rotate(360deg);
+  }
+}

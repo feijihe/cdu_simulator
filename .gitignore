@@ -1,0 +1,17 @@
+# Rust
+/target
+
+# Node / Vite
+node_modules/
+web/dist/
+
+# Runtime point-table overrides written by the web UI.
+# 想让仓库固定带这套配置（比如 PSI 量程、地址）就注释掉下面这行。
+config/overrides.yaml
+
+# Logs / editor / OS
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

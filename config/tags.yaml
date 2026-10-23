@@ -1,0 +1,273 @@
+# CDU 模拟器点表 v0.3
+#
+# 说明：
+#   - 寄存器里放的是**原始信号**，不是工程值：默认 4-20 mA，单位 µA（4000..20000）。
+#     每个点可以用 place 描述它在系统图上的位置，前端据此自动渲染。
+#   - modbus.addr 全部是占位地址，必须按实机点表核对后修改；不要直接拿去联调。
+#   - 过滤器按纯水假设忽略：不建模滤芯压降与堵塞。
+#   - P10/P13/P20/P23、pH 为选装点，用 presence/present 控制。
+
+meta:
+  name: cdu_simulator
+  version: "0.3.0"
+  notes:
+    - 模拟量输出原始信号，工程换算由控制程序完成
+    - 双泵，支持同时运行与一用一备，轮换逻辑在控制程序侧
+    - 安全阀整定 0.6 MPa
+
+# 默认信号：4-20 mA，寄存器值单位 µA
+signal:
+  kind: current
+  range: [4000, 20000]
+
+# 传感器噪声：默认按量程的 0.05% 做一阶相关随机扰动
+noise:
+  enabled: true
+  seed: 42
+  sigma_pct: 0.05
+  tau_s: 2.0
+
+# 热工参数，先用占位值，M1 用实机数据辨识
+plant:
+  load_kw: 30
+  ua_kw_per_k: 8
+  loop_capacity_kj_per_k: 400
+  facility_supply_c: 30
+  valve_stroke_s: 90
+
+tags:
+  # ---------------- 一次侧 ----------------
+  - id: P10
+    desc: 一次侧进口压力（外接，选装）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    presence: optional
+    present: true
+    place: { loop: primary, branch: pre_hx, order: 10 }
+    modbus: { fc: 3, addr: 100 }
+
+  - id: P11
+    desc: 一次侧进口压力（柜内）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    place: { loop: primary, branch: pre_hx, order: 20 }
+    modbus: { fc: 3, addr: 101 }
+
+  - id: Q1
+    desc: 一次侧流量
+    kind: ai
+    unit: LPM
+    range: [0, 300]
+    noise_sigma: 0.15
+    place: { loop: primary, branch: pre_hx, order: 30 }
+    modbus: { fc: 3, addr: 102 }
+
+  - id: T11
+    desc: 一次侧进水温度（板换进口）
+    kind: ai
+    unit: "°C"
+    range: [0, 80]
+    place: { loop: primary, branch: pre_hx, order: 40 }
+    modbus: { fc: 3, addr: 103 }
+
+  - id: T12
+    desc: 一次侧出水温度（板换出口）
+    kind: ai
+    unit: "°C"
+    range: [0, 80]
+    place: { loop: primary, branch: post_hx, order: 10 }
+    modbus: { fc: 3, addr: 104 }
+
+  - id: P12
+    desc: 一次侧出口压力（柜内，阀后）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    place: { loop: primary, branch: post_hx, order: 20 }
+    modbus: { fc: 3, addr: 105 }
+
+  - id: P13
+    desc: 一次侧出口压力（外接，选装）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    presence: optional
+    present: true
+    place: { loop: primary, branch: post_hx, order: 30 }
+    modbus: { fc: 3, addr: 106 }
+
+  # ---------------- 二次侧 ----------------
+  - id: P20
+    desc: 二次侧回水压力（外接，选装）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    presence: optional
+    present: true
+    place: { loop: secondary, branch: pre_hx, order: 10 }
+    modbus: { fc: 3, addr: 107 }
+
+  - id: P21
+    desc: 二次侧回水压力（柜内，板换前）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    place: { loop: secondary, branch: pre_hx, order: 20 }
+    modbus: { fc: 3, addr: 108 }
+
+  - id: Q2
+    desc: 二次侧流量
+    kind: ai
+    unit: LPM
+    range: [0, 300]
+    noise_sigma: 0.15
+    place: { loop: secondary, branch: pre_hx, order: 30 }
+    modbus: { fc: 3, addr: 109 }
+
+  - id: T21
+    desc: 二次侧回水温度（板换进口）
+    kind: ai
+    unit: "°C"
+    range: [0, 80]
+    place: { loop: secondary, branch: pre_hx, order: 40 }
+    modbus: { fc: 3, addr: 110 }
+
+  - id: PH
+    desc: 二次侧 pH（选配）
+    kind: ai
+    unit: pH
+    range: [0, 14]
+    presence: optional
+    present: false
+    place: { loop: secondary, branch: pre_hx, order: 50 }
+    modbus: { fc: 3, addr: 115 }
+
+  - id: T22
+    desc: 二次侧供液温度（主控量）
+    kind: ai
+    unit: "°C"
+    range: [0, 80]
+    place: { loop: secondary, branch: post_hx, order: 10 }
+    modbus: { fc: 3, addr: 111 }
+
+  - id: P22
+    desc: 二次侧供液压力（柜内）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    place: { loop: secondary, branch: post_hx, order: 20 }
+    modbus: { fc: 3, addr: 112 }
+
+  - id: P23
+    desc: 二次侧供液压力（外接，选装）
+    kind: ai
+    unit: PSI
+    range: [0, 150]
+    presence: optional
+    present: true
+    place: { loop: secondary, branch: post_hx, order: 30 }
+    modbus: { fc: 3, addr: 113 }
+
+  # ---------------- 执行器反馈 ----------------
+  - id: LEVEL
+    desc: 水箱液位
+    kind: ai
+    unit: "%"
+    range: [0, 100]
+    modbus: { fc: 3, addr: 114 }
+
+  - id: VALVE_POS
+    desc: 比例阀实际开度反馈
+    kind: ai
+    unit: "%"
+    range: [0, 100]
+    modbus: { fc: 3, addr: 116 }
+
+  # ---------------- 控制程序写 ----------------
+  - id: VALVE_CMD
+    desc: 比例阀开度指令
+    kind: ao
+    unit: "%"
+    range: [0, 100]
+    modbus: { fc: 3, addr: 200 }
+    initial: 100
+    writable: true
+
+  - id: PUMP1_SPEED_CMD
+    desc: 泵 1 转速指令
+    kind: ao
+    unit: "%"
+    range: [0, 100]
+    modbus: { fc: 3, addr: 201 }
+    writable: true
+
+  - id: PUMP2_SPEED_CMD
+    desc: 泵 2 转速指令
+    kind: ao
+    unit: "%"
+    range: [0, 100]
+    modbus: { fc: 3, addr: 202 }
+    writable: true
+
+  # ---------------- 开关量 ----------------
+  - id: PUMP1_RUN
+    desc: 泵 1 运行反馈
+    kind: di
+    modbus: { fc: 1, addr: 0 }
+
+  - id: PUMP2_RUN
+    desc: 泵 2 运行反馈
+    kind: di
+    modbus: { fc: 1, addr: 1 }
+
+  - id: PUMP1_FAULT
+    desc: 泵 1 故障
+    kind: di
+    modbus: { fc: 1, addr: 2 }
+
+  - id: PUMP2_FAULT
+    desc: 泵 2 故障
+    kind: di
+    modbus: { fc: 1, addr: 3 }
+
+  - id: LEAK_ALARM
+    desc: 漏水报警
+    kind: di
+    modbus: { fc: 1, addr: 4 }
+
+  - id: LEVEL_LOW
+    desc: 液位低报警
+    kind: di
+    modbus: { fc: 1, addr: 5 }
+
+  - id: LEVEL_HIGH
+    desc: 液位高报警
+    kind: di
+    modbus: { fc: 1, addr: 6 }
+
+  - id: SAFETY_VALVE_OPEN
+    desc: 安全阀开启（0.6 MPa）
+    kind: di
+    modbus: { fc: 1, addr: 7 }
+
+  - id: PUMP1_RUN_CMD
+    desc: 泵 1 启停命令
+    kind: do
+    modbus: { fc: 1, addr: 16 }
+    initial: true
+    writable: true
+
+  - id: PUMP2_RUN_CMD
+    desc: 泵 2 启停命令
+    kind: do
+    modbus: { fc: 1, addr: 17 }
+    initial: true
+    writable: true
+
+  - id: ALARM_RESET
+    desc: 报警复位
+    kind: do
+    modbus: { fc: 1, addr: 18 }
+    writable: true
