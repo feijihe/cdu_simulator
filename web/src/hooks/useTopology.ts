@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
-import { fetchTopology, type Topology } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { fetchTopology, type ConnStatus, type Topology } from "@/lib/api";
 
 /**
- * 拓扑在运行期不变，只取一次。undefined = 还在加载，null = 点表没配 topology。
- * 加载失败时保持 null，前端会退化成按 place 合成四条管段。
+ * 拓扑在运行期可能变化（配置页保存后），所以不能只取一次：
+ * - WebSocket 连上时拉取一次，覆盖“先开页面、后启动模拟器”的情况；
+ * - 配置保存后调用 reload() 重新拉取。
+ * undefined = 还没成功加载过，null = 点表确实没配 topology。
  */
-export function useTopology() {
+export function useTopology(status: ConnStatus) {
   const [topology, setTopology] = useState<Topology | null | undefined>(undefined);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (status !== "open") return;
     let active = true;
     fetchTopology()
       .then((value) => {
@@ -20,7 +24,9 @@ export function useTopology() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [status, tick]);
 
-  return topology;
+  const reload = useCallback(() => setTick((value) => value + 1), []);
+
+  return { topology, reload };
 }

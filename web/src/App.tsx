@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Moon, Radio, Sun, WifiOff } from "lucide-react";
+import { Activity, Moon, Radio, Settings2, Sun, WifiOff } from "lucide-react";
 import PidDiagram from "@/components/PidDiagram";
 import KeyMetrics from "@/components/KeyMetrics";
 import ControlPanel from "@/components/ControlPanel";
+import ConfigPage from "@/components/ConfigPage";
 import Trend from "@/components/Trend";
 import PointPanel from "@/components/PointPanel";
 import TagEditor from "@/components/TagEditor";
@@ -21,6 +22,20 @@ import {
 } from "@/lib/topology";
 
 type Mode = "eng" | "raw";
+
+function useHashPath() {
+  const [path, setPath] = useState(
+    () => window.location.hash.replace(/^#/, "") || "/",
+  );
+
+  useEffect(() => {
+    const onChange = () => setPath(window.location.hash.replace(/^#/, "") || "/");
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+
+  return path;
+}
 
 function pointValue(point: PointSample | undefined, digits: number) {
   if (!point || !point.present) return "—";
@@ -41,7 +56,8 @@ function Stat({ label, value, unit }: { label: string; value: string; unit: stri
 
 export default function App() {
   const { snapshot, status, retry } = useSimulation();
-  const topologyState = useTopology();
+  const { topology: topologyState, reload: reloadTopology } = useTopology(status);
+  const hashPath = useHashPath();
   const [mode, setMode] = useState<Mode>("eng");
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -103,6 +119,17 @@ export default function App() {
   const pumps = pumpsOf(topology);
   const runningPumps = pumps.filter((p) => points.get(p.run)?.v === 1).length;
 
+  if (hashPath === "/config") {
+    return (
+      <ConfigPage
+        onBack={() => {
+          window.location.hash = "";
+        }}
+        onApplied={reloadTopology}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
@@ -125,6 +152,17 @@ export default function App() {
           <span className="font-mono text-[11px] text-muted-foreground">更新 {time}</span>
 
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => {
+                window.location.hash = "#/config";
+              }}
+              title="打开配置页（segments / equipment / tags）"
+            >
+              <Settings2 className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -173,28 +211,6 @@ export default function App() {
             mode={mode}
             onSelect={setSelected}
           />
-          <div className="mt-1 grid grid-cols-2 gap-2 px-2 md:grid-cols-4">
-            <Stat
-              label={primaryFlow ? `一次侧流量 ${primaryFlow.id}` : "一次侧流量"}
-              value={pointValue(primaryFlow, 2)}
-              unit={primaryFlow?.unit ?? ""}
-            />
-            <Stat
-              label={secondaryFlow ? `二次侧流量 ${secondaryFlow.id}` : "二次侧流量"}
-              value={pointValue(secondaryFlow, 2)}
-              unit={secondaryFlow?.unit ?? ""}
-            />
-            <Stat
-              label={valve ? `${valve.label}开度` : "比例阀开度"}
-              value={pointValue(valve ? points.get(valve.pos) : undefined, 1)}
-              unit="%"
-            />
-            <Stat
-              label="泵运行"
-              value={pumps.length > 0 ? `${runningPumps}/${pumps.length}` : "—"}
-              unit="台"
-            />
-          </div>
           <div className="px-3 py-2 text-[10px] text-muted-foreground/80">
             Modbus TCP :1502 · WebSocket /ws · 点表 config/tags.yaml · 系统图由 topology 渲染 · 模拟量输出原始信号
           </div>

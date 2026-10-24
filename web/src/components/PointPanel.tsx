@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pencil, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import type { PointSample } from "@/lib/api";
 import { displayValue, unitFor } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -33,11 +34,11 @@ export default function PointPanel({ points, selected, mode, onSelect, onEdit }:
         </div>
         <div className="relative mt-1">
           <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
+          <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索点位或描述"
-            className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/80 focus:border-primary/60"
+            className="h-7 pl-7 pr-2 text-xs"
           />
         </div>
       </CardHeader>

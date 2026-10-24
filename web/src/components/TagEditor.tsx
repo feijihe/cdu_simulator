@@ -3,6 +3,16 @@ import { AlertCircle, Save, X } from "lucide-react";
 import type { PointSample, SignalKind } from "@/lib/api";
 import { SIGNAL_LABEL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Props {
   point: PointSample;
@@ -125,6 +135,9 @@ export default function TagEditor({ point, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`编辑点位 ${point.id}`}
         className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -147,101 +160,116 @@ export default function TagEditor({ point, onClose }: Props) {
               </div>
             )}
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={onClose}
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label="关闭"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="space-y-3 p-4">
-          <label className="block">
-            <span className="mb-1 block text-[11px] text-muted-foreground">
+          <div>
+            <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
               Modbus 地址（保持寄存器 / 线圈）
-            </span>
-            <input
+            </Label>
+            <Input
               value={addr}
               onChange={(e) => setAddr(e.target.value)}
               inputMode="numeric"
-              className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-8 font-mono text-sm"
             />
-          </label>
+          </div>
 
           {analog ? (
             <>
               <div className="grid grid-cols-[1fr_1.4fr] gap-2">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-muted-foreground">工程单位</span>
-                  <input
+                <div>
+                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                    工程单位
+                  </Label>
+                  <Input
                     list="unit-presets"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-primary/60"
+                    className="h-8 text-sm"
                   />
                   <datalist id="unit-presets">
                     {UNIT_PRESETS.map((u) => (
                       <option key={u} value={u} />
                     ))}
                   </datalist>
-                </label>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] text-muted-foreground">量程下限</span>
-                    <input
+                  <div>
+                    <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                      量程下限
+                    </Label>
+                    <Input
                       value={engMin}
                       onChange={(e) => setEngMin(e.target.value)}
                       inputMode="decimal"
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-primary/60"
+                      className="h-8 font-mono text-sm"
                     />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] text-muted-foreground">量程上限</span>
-                    <input
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                      量程上限
+                    </Label>
+                    <Input
                       value={engMax}
                       onChange={(e) => setEngMax(e.target.value)}
                       inputMode="decimal"
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-primary/60"
+                      className="h-8 font-mono text-sm"
                     />
-                  </label>
+                  </div>
                 </div>
               </div>
 
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-muted-foreground">信号类型</span>
-                <select
-                  value={kind}
-                  onChange={(e) => changeKind(e.target.value as SignalKind)}
-                  className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-primary/60"
-                >
-                  {(Object.keys(SIGNAL_LABEL) as SignalKind[]).map((k) => (
-                    <option key={k} value={k}>
-                      {SIGNAL_LABEL[k]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                  信号类型
+                </Label>
+                <Select value={kind} onValueChange={(value) => changeKind(value as SignalKind)}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(SIGNAL_LABEL) as SignalKind[]).map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {SIGNAL_LABEL[k]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-muted-foreground">信号下限</span>
-                  <input
+                <div>
+                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                    信号下限
+                  </Label>
+                  <Input
                     value={sigMin}
                     onChange={(e) => setSigMin(e.target.value)}
                     inputMode="decimal"
-                    className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-primary/60"
+                    className="h-8 font-mono text-sm"
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-muted-foreground">信号上限</span>
-                  <input
+                </div>
+                <div>
+                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
+                    信号上限
+                  </Label>
+                  <Input
                     value={sigMax}
                     onChange={(e) => setSigMax(e.target.value)}
                     inputMode="decimal"
-                    className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-primary/60"
+                    className="h-8 font-mono text-sm"
                   />
-                </label>
+                </div>
               </div>
 
               <div className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
@@ -262,15 +290,19 @@ export default function TagEditor({ point, onClose }: Props) {
             </div>
           )}
 
-          <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="tag-editor-present"
               checked={present}
-              onChange={(e) => setPresent(e.target.checked)}
-              className="h-3.5 w-3.5 accent-primary"
+              onCheckedChange={(checked) => setPresent(checked === true)}
             />
-            在位（取消后该点输出 0，模拟未安装）
-          </label>
+            <Label
+              htmlFor="tag-editor-present"
+              className="text-[11px] font-normal text-muted-foreground"
+            >
+              在位（取消后该点输出 0，模拟未安装）
+            </Label>
+          </div>
 
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-300">

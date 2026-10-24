@@ -25,7 +25,7 @@ try {
     );
     row?.querySelector("button")?.click();
   });
-  await page.waitForSelector("select", { timeout: 5000 });
+  await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   await new Promise((r) => setTimeout(r, 400));
   await page.screenshot({ path: out });
   console.log(`saved ${out}`);

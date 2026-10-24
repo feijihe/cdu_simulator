@@ -4,11 +4,11 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PointTable {
     pub meta: Meta,
     /// 设备拓扑；省略时只能用 place.loop / place.branch 描述传感器位置
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topology: Option<Topology>,
     #[serde(default)]
     pub plant: PlantConfig,
@@ -19,7 +19,7 @@ pub struct PointTable {
     pub tags: Vec<Tag>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Meta {
     pub name: String,
     pub version: String,
@@ -27,7 +27,7 @@ pub struct Meta {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct PlantConfig {
     #[serde(default = "default_load")]
     pub load_kw: f64,
@@ -55,7 +55,7 @@ impl Default for PlantConfig {
 }
 
 /// 传感器噪声。幅值按工程量程的百分比给，带一阶相关性（更像真实变送器而不是纯白噪声）。
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct NoiseConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -141,21 +141,21 @@ impl SignalKind {
 }
 
 /// 上电初始值：模拟量用数字，开关量用布尔。
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(untagged)]
 pub enum Initial {
     Number(f64),
     Bool(bool),
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Tag {
     pub id: String,
     pub desc: String,
     pub kind: Kind,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<[f64; 2]>,
     #[serde(default)]
     pub presence: Presence,
@@ -163,16 +163,16 @@ pub struct Tag {
     pub present: bool,
     pub modbus: Modbus,
     /// 单点信号量程，覆盖表级默认值
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signal: Option<SignalConfig>,
     /// 系统图位置；没有 place 的点只出现在点位表里
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<Place>,
     /// 单点噪声幅值（工程量单位），覆盖 noise.sigma_pct
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise_sigma: Option<f64>,
     /// 上电初始命令值（仅对 AO/DO 生效）
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial: Option<Initial>,
     #[serde(default)]
     pub writable: bool,
@@ -181,7 +181,7 @@ pub struct Tag {
     pub base_unit: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Ai,
@@ -205,7 +205,7 @@ impl Kind {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Presence {
     Always,
@@ -550,7 +550,7 @@ impl Topology {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Modbus {
     pub fc: u8,
     pub addr: u16,
@@ -717,24 +717,48 @@ pub struct TagOverride {
     pub present: Option<bool>,
 }
 
+/// Web 配置页保存的完整覆盖：整段 topology + 整份 tags。
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct ConfigOverlay {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<Topology>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<Tag>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OverlayFile {
+    Full(ConfigOverlay),
+    Legacy(Vec<TagOverride>),
+}
+
 pub fn overrides_path(config: &Path) -> std::path::PathBuf {
     config.with_file_name("overrides.yaml")
 }
 
-pub fn read_overrides(path: &Path) -> Result<Vec<TagOverride>> {
+fn read_overlay(path: &Path) -> Result<Option<OverlayFile>> {
     if !path.exists() {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("读取 {} 失败", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("读取 {} 失败", path.display()))?;
     if text.trim().is_empty() {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    serde_yaml::from_str(&text).with_context(|| format!("解析 {} 失败", path.display()))
+    let file =
+        serde_yaml::from_str(&text).with_context(|| format!("解析 {} 失败", path.display()))?;
+    Ok(Some(file))
 }
 
-pub fn write_overrides(path: &Path, list: &[TagOverride]) -> Result<()> {
-    let text = serde_yaml::to_string(list)?;
+/// 把当前完整配置写成覆盖文件；原始 tags.yaml 保持不变。
+pub fn write_overlay(path: &Path, table: &PointTable) -> Result<()> {
+    let overlay = ConfigOverlay {
+        topology: table.topology.clone(),
+        tags: Some(table.tags.clone()),
+    };
+    let body = serde_yaml::to_string(&overlay)?;
+    let text = format!("# 由 Web 配置页生成；删除此文件可恢复原始 tags.yaml\n{body}");
     std::fs::write(path, text).with_context(|| format!("写入 {} 失败", path.display()))
 }
 
@@ -765,6 +789,38 @@ impl PointTable {
         }
         Ok(())
     }
+
+    fn apply_overlay(&mut self, file: OverlayFile) -> Result<()> {
+        match file {
+            OverlayFile::Legacy(list) => {
+                for ov in &list {
+                    self.apply_override(ov)?;
+                }
+            }
+            OverlayFile::Full(overlay) => {
+                if let Some(topology) = overlay.topology {
+                    self.topology = Some(topology);
+                }
+                if let Some(tags) = overlay.tags {
+                    // 已有位号保留原来的内部单位，改单位只影响显示/寄存器换算
+                    let old_units: HashMap<String, String> = self
+                        .tags
+                        .iter()
+                        .map(|t| (t.id.clone(), t.base_unit.clone()))
+                        .collect();
+                    let mut tags = tags;
+                    for tag in &mut tags {
+                        tag.base_unit = old_units
+                            .get(&tag.id)
+                            .cloned()
+                            .unwrap_or_else(|| tag.unit.clone().unwrap_or_default());
+                    }
+                    self.tags = tags;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl PointTable {
@@ -792,12 +848,15 @@ impl PointTable {
         let mut table = Self::load_plain(path)?;
 
         let ov_path = overrides_path(path);
-        for ov in read_overrides(&ov_path)? {
-            table.apply_override(&ov)?;
+        if let Some(file) = read_overlay(&ov_path)? {
+            table.apply_overlay(file)?;
+            if let Some(topology) = table.topology.as_mut() {
+                topology.fill_defaults();
+            }
+            table
+                .validate()
+                .with_context(|| format!("应用 {} 后校验失败", ov_path.display()))?;
         }
-        table
-            .validate()
-            .with_context(|| format!("应用 {} 后校验失败", ov_path.display()))?;
         Ok(table)
     }
 
@@ -814,8 +873,37 @@ impl PointTable {
                     bail!("点 {} 的噪声幅值不能为负", tag.id);
                 }
             }
+            if tag.id.trim().is_empty() || tag.id.chars().any(char::is_whitespace) {
+                bail!("点 id 不能为空或包含空白: {:?}", tag.id);
+            }
+            if tag.desc.trim().is_empty() {
+                bail!("点 {} 缺少描述", tag.id);
+            }
+            if tag
+                .unit
+                .as_deref()
+                .is_some_and(|unit| unit.trim().is_empty())
+            {
+                bail!("点 {} 的工程单位不能为空", tag.id);
+            }
             if ids.insert(tag.id.as_str(), ()).is_some() {
                 bail!("重复的点 id: {}", tag.id);
+            }
+            match (tag.kind, tag.initial) {
+                (Kind::Ai | Kind::Di, Some(_)) => {
+                    bail!("输入点 {} 不能设置 initial", tag.id);
+                }
+                (Kind::Ao, Some(Initial::Bool(_))) | (Kind::Do, Some(Initial::Number(_))) => {
+                    bail!("点 {} 的 initial 类型与 kind 不匹配", tag.id);
+                }
+                (Kind::Ao, Some(Initial::Number(value))) => {
+                    if let Some([lo, hi]) = tag.range {
+                        if value < lo || value > hi {
+                            bail!("点 {} 的 initial {value} 不在量程 {lo}..{hi} 内", tag.id);
+                        }
+                    }
+                }
+                _ => {}
             }
 
             if tag.kind.is_analog() {
@@ -1226,6 +1314,28 @@ topology:
             "place: { segment: s_out, order: 12 }",
         );
         assert!(error(&yaml).contains("不在该管段上"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn overlay_roundtrip_replaces_topology_and_tags() {
+        let mut table = PointTable::parse(BASE).unwrap();
+        table.tags[0].desc = "改过的描述".to_string();
+        table.topology.as_mut().unwrap().segments[0].label = "改过的管段".to_string();
+
+        let path = std::env::temp_dir().join(format!("cdu-overlay-{}.yaml", std::process::id()));
+        write_overlay(&path, &table).unwrap();
+
+        let mut loaded = PointTable::parse(BASE).unwrap();
+        let overlay = read_overlay(&path).unwrap().expect("overlay 应当存在");
+        loaded.apply_overlay(overlay).unwrap();
+        loaded.validate().unwrap();
+
+        assert_eq!(loaded.tags[0].desc, "改过的描述");
+        assert_eq!(
+            loaded.topology.as_ref().unwrap().segments[0].label,
+            "改过的管段"
+        );
+        std::fs::remove_file(path).ok();
     }
 
     #[test]

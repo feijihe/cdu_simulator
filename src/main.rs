@@ -100,21 +100,12 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let overrides_path = tags::overrides_path(&config);
-    let overrides = if no_overrides {
-        Vec::new()
-    } else {
-        tags::read_overrides(&overrides_path)?
-    };
+    let overlay_path = tags::overrides_path(&config);
     let plant_cfg = table.plant;
     let meta_name = table.meta.name.clone();
     let tag_count = table.tags.len();
 
-    let state = Arc::new(RwLock::new(state::SimState::new(
-        table,
-        overrides,
-        overrides_path,
-    )));
+    let state = Arc::new(RwLock::new(state::SimState::new(table, overlay_path)));
     let mut plant = plant::Plant::new(plant_cfg);
     {
         let mut guard = state.write().unwrap();

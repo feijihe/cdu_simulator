@@ -1,4 +1,6 @@
 export type PointKind = "AI" | "AO" | "DI" | "DO";
+/** tags.yaml / GET /api/config 里的 kind 是小写。 */
+export type ConfigKind = "ai" | "ao" | "di" | "do";
 export type SignalKind = "current" | "voltage" | "adc" | "rtd";
 export type LoopSide = "primary" | "secondary";
 export type Branch = "pre_hx" | "post_hx";
@@ -88,11 +90,94 @@ export interface Topology {
   equipment: Equipment[];
 }
 
+export interface MetaConfig {
+  name: string;
+  version: string;
+  notes?: string[];
+}
+
+export interface PlantConfig {
+  load_kw: number;
+  ua_kw_per_k: number;
+  loop_capacity_kj_per_k: number;
+  facility_supply_c: number;
+  valve_stroke_s: number;
+}
+
+export interface NoiseConfig {
+  enabled: boolean;
+  seed: number;
+  sigma_pct: number;
+  tau_s: number;
+}
+
+export interface SignalConfig {
+  kind: SignalKind;
+  range: [number, number];
+}
+
+/** 配置页编辑的完整点位定义（GET /api/config 返回的形状）。 */
+export interface TagConfig {
+  id: string;
+  desc: string;
+  kind: ConfigKind;
+  unit?: string;
+  range?: [number, number];
+  presence: "always" | "optional" | "absent";
+  present: boolean;
+  modbus: { fc: number; addr: number };
+  signal?: SignalConfig;
+  place?: Place;
+  noise_sigma?: number;
+  initial?: number | boolean;
+  writable: boolean;
+}
+
+export interface ConfigPayload {
+  meta: MetaConfig;
+  topology?: Topology;
+  plant: PlantConfig;
+  signal: SignalConfig;
+  noise: NoiseConfig;
+  tags: TagConfig[];
+}
+
 /** 静态拓扑，加载一次即可；点表没配 topology 时返回 null。 */
 export async function fetchTopology(): Promise<Topology | null> {
   const res = await fetch("/api/topology");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as Topology | null;
+}
+
+export async function fetchConfig(): Promise<ConfigPayload> {
+  const res = await fetch("/api/config");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as ConfigPayload;
+}
+
+export async function saveConfig(config: ConfigPayload): Promise<void> {
+  const res = await fetch("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error ?? `HTTP ${res.status}`);
+  }
+}
+
+export async function exportConfig(config: ConfigPayload): Promise<Blob> {
+  const res = await fetch("/api/config/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error ?? `HTTP ${res.status}`);
+  }
+  return res.blob();
 }
 
 export type ConnStatus = "connecting" | "open" | "closed";

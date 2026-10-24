@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::tags::{Area, Initial, Kind, PointTable, SignalConfig, SignalKind, TagOverride};
+use crate::tags::{Area, Initial, Kind, PointTable, SignalConfig, SignalKind};
 
 struct Rng {
     state: u64,
@@ -54,8 +54,7 @@ pub struct SimState {
     bits: Vec<bool>,
     index: HashMap<(Area, u16), usize>,
     by_id: HashMap<String, usize>,
-    overrides: BTreeMap<String, TagOverride>,
-    overrides_path: PathBuf,
+    overlay_path: PathBuf,
     pub boundary: Boundary,
     /// 模型当前使用的一次侧进水 / 二次侧回水温度（未叠加传感器噪声）
     pub effective_facility_c: f64,
@@ -115,11 +114,7 @@ pub struct Snapshot {
 }
 
 impl SimState {
-    pub fn new(
-        table: PointTable,
-        overrides: Vec<TagOverride>,
-        overrides_path: PathBuf,
-    ) -> Self {
+    pub fn new(table: PointTable, overlay_path: PathBuf) -> Self {
         let mut values = vec![0.0; table.tags.len()];
         let mut bits = vec![false; table.tags.len()];
         let mut index = HashMap::new();
@@ -143,11 +138,6 @@ impl SimState {
             index.insert((tag.area(), tag.modbus.addr), i);
         }
 
-        let mut map = BTreeMap::new();
-        for ov in overrides {
-            map.insert(ov.id.clone(), ov);
-        }
-
         let reported = values.clone();
         let noise_state = vec![0.0; values.len()];
         let rng = Rng::new(table.noise.seed);
@@ -161,8 +151,7 @@ impl SimState {
             bits,
             index,
             by_id,
-            overrides: map,
-            overrides_path,
+            overlay_path,
             boundary: Boundary::default(),
             effective_facility_c: 30.0,
             effective_return_c: 32.0,
@@ -189,6 +178,97 @@ impl SimState {
 
     pub fn clear_boundary(&mut self) {
         self.boundary = Boundary::default();
+    }
+
+    /// Web 配置页提交：校验、写入 overrides.yaml，再替换运行中的点表。
+    pub fn apply_config(&mut self, mut table: PointTable) -> Result<(), String> {
+        // 配置页只编辑 topology / tags，其余段沿用当前运行配置
+        table.meta = self.table.meta.clone();
+        table.plant = self.table.plant;
+        table.signal = self.table.signal;
+        table.noise = self.table.noise;
+
+        let old_tags: HashMap<String, (String, Kind)> = self
+            .table
+            .tags
+            .iter()
+            .map(|tag| (tag.id.clone(), (tag.base_unit.clone(), tag.kind)))
+            .collect();
+
+        for tag in &mut table.tags {
+            // 已有位号且类型不变时保留模型内部单位；新增或改类型的点用当前单位
+            tag.base_unit = old_tags
+                .get(&tag.id)
+                .filter(|(_, kind)| *kind == tag.kind)
+                .map(|(unit, _)| unit.clone())
+                .unwrap_or_else(|| tag.unit.clone().unwrap_or_default());
+        }
+        if let Some(topology) = table.topology.as_mut() {
+            topology.fill_defaults();
+        }
+        table.validate().map_err(|err| format!("{err:#}"))?;
+
+        crate::tags::write_overlay(&self.overlay_path, &table)
+            .map_err(|err| format!("保存配置失败: {err:#}"))?;
+        self.replace_table(table);
+        Ok(())
+    }
+
+    /// 用新点表替换运行状态；同 id 且同类型的点保留当前值。
+    pub fn replace_table(&mut self, table: PointTable) {
+        let old_kinds: HashMap<String, Kind> = self
+            .table
+            .tags
+            .iter()
+            .map(|tag| (tag.id.clone(), tag.kind))
+            .collect();
+        let old_by_id = std::mem::take(&mut self.by_id);
+        let old_values = std::mem::take(&mut self.values);
+        let old_bits = std::mem::take(&mut self.bits);
+
+        let mut values = vec![0.0; table.tags.len()];
+        let mut bits = vec![false; table.tags.len()];
+        let mut by_id = HashMap::new();
+
+        for (i, tag) in table.tags.iter().enumerate() {
+            by_id.insert(tag.id.clone(), i);
+
+            if let Some(&old) = old_by_id.get(&tag.id) {
+                if old_kinds.get(&tag.id) == Some(&tag.kind) {
+                    values[i] = old_values[old];
+                    bits[i] = old_bits[old];
+                    continue;
+                }
+            }
+
+            match (tag.kind, tag.initial) {
+                (Kind::Ao, Some(Initial::Number(value))) => {
+                    let [lo, hi] = tag.range.unwrap_or([0.0, 100.0]);
+                    values[i] = value.clamp(lo, hi);
+                }
+                (Kind::Do, Some(Initial::Bool(on))) => bits[i] = on,
+                _ => {
+                    if !tag.writable {
+                        if let Some([lo, hi]) = tag.range {
+                            values[i] = (lo + hi) / 2.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.table = table;
+        self.by_id = by_id;
+        self.values = values;
+        self.bits = bits;
+        self.reported = self.values.clone();
+        self.noise_state = vec![0.0; self.values.len()];
+        self.rebuild_index();
+    }
+
+    pub fn save_overlay(&self) -> Result<(), String> {
+        crate::tags::write_overlay(&self.overlay_path, &self.table)
+            .map_err(|err| format!("保存配置失败: {err:#}"))
     }
 
     /// 在每个仿真步之后刷新「传感器读数」：真实值是 values，读数带噪声。
@@ -225,35 +305,29 @@ impl SimState {
     }
 
     pub fn value(&self, id: &str) -> f64 {
-        let idx = *self
-            .by_id
+        self.by_id
             .get(id)
-            .unwrap_or_else(|| panic!("点表中没有 {id}"));
-        self.values[idx]
+            .map(|&idx| self.values[idx])
+            .unwrap_or(0.0)
     }
 
     pub fn bit(&self, id: &str) -> bool {
-        let idx = *self
-            .by_id
+        self.by_id
             .get(id)
-            .unwrap_or_else(|| panic!("点表中没有 {id}"));
-        self.bits[idx]
+            .map(|&idx| self.bits[idx])
+            .unwrap_or(false)
     }
 
     pub fn set_value(&mut self, id: &str, value: f64) {
-        let idx = *self
-            .by_id
-            .get(id)
-            .unwrap_or_else(|| panic!("点表中没有 {id}"));
-        self.values[idx] = value;
+        if let Some(&idx) = self.by_id.get(id) {
+            self.values[idx] = value;
+        }
     }
 
     pub fn set_bit(&mut self, id: &str, value: bool) {
-        let idx = *self
-            .by_id
-            .get(id)
-            .unwrap_or_else(|| panic!("点表中没有 {id}"));
-        self.bits[idx] = value;
+        if let Some(&idx) = self.by_id.get(id) {
+            self.bits[idx] = value;
+        }
     }
 
     /// 选装点缺失时按 0 输出，与控制程序约定「0 表示未安装」。
@@ -341,36 +415,7 @@ impl SimState {
         }
 
         self.rebuild_index();
-
-        let entry = self
-            .overrides
-            .entry(id.to_string())
-            .or_insert_with(|| TagOverride {
-                id: id.to_string(),
-                addr: None,
-                signal: None,
-                range: None,
-                unit: None,
-                present: None,
-            });
-        if let Some(addr) = patch.addr {
-            entry.addr = Some(addr);
-        }
-        if let Some(present) = patch.present {
-            entry.present = Some(present);
-        }
-        if let Some(sig) = patch.signal {
-            entry.signal = Some(sig);
-        }
-        if let Some(range) = patch.range {
-            entry.range = Some(range);
-        }
-        if let Some(unit) = &patch.unit {
-            entry.unit = Some(unit.trim().to_string());
-        }
-
-        let list: Vec<TagOverride> = self.overrides.values().cloned().collect();
-        crate::tags::write_overrides(&self.overrides_path, &list)
+        self.save_overlay()
             .map_err(|err| format!("已应用但保存失败: {err}"))?;
 
         Ok(())

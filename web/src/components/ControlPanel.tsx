@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -97,6 +98,7 @@ export default function ControlPanel({
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditField | null>(null);
+  const [boundaryOpen, setBoundaryOpen] = useState(false);
 
   const valve = valveOf(topology);
   const pumps = pumpsOf(topology);
@@ -207,64 +209,85 @@ export default function ControlPanel({
         );
       })}
 
-      <div className="col-span-full flex flex-wrap items-center gap-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
-        <span className="text-muted-foreground">边界条件</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-[10px]"
-          onClick={resetBoundary}
-        >
-          自动
-        </Button>
-        {boundary?.facility_c != null && <Badge variant="warning">进水 手动</Badge>}
-        {boundary?.return_c != null && <Badge variant="warning">回水 手动</Badge>}
-        {boundary?.ua_kw_per_k != null && <Badge variant="warning">UA 手动</Badge>}
-        <span className="ml-auto text-[10px] text-muted-foreground/80">
-          设定的是物理边界，传感器读数随之变化
-        </span>
-      </div>
+      <div className="col-span-full border-t border-border pt-2">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setBoundaryOpen((open) => !open)}
+            aria-expanded={boundaryOpen}
+            className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent hover:text-foreground"
+          >
+            <ChevronRight
+              className={`h-3.5 w-3.5 transition-transform ${boundaryOpen ? "rotate-90" : ""}`}
+            />
+            边界条件
+            <span className="text-[10px] text-muted-foreground/70">
+              {boundaryOpen ? "收起" : "展开"}
+            </span>
+          </button>
+          <span className="font-mono text-[10px] text-muted-foreground/90">
+            进水 {t11Target.toFixed(1)} °C · 回水 {t21Target.toFixed(1)} °C · UA{" "}
+            {uaTarget.toFixed(1)} kW/K
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px]"
+            onClick={resetBoundary}
+          >
+            自动
+          </Button>
+          {boundary?.facility_c != null && <Badge variant="warning">进水 手动</Badge>}
+          {boundary?.return_c != null && <Badge variant="warning">回水 手动</Badge>}
+          {boundary?.ua_kw_per_k != null && <Badge variant="warning">UA 手动</Badge>}
+          <span className="ml-auto text-[10px] text-muted-foreground/80">
+            设定的是物理边界，传感器读数随之变化
+          </span>
+        </div>
 
-      <div className="col-span-full grid grid-cols-1 gap-3 md:grid-cols-3">
-        <BoundarySlider
-          label={`${primarySegment?.label ?? "一次侧进水"}${primaryTag ? ` · ${primaryTag.id}` : "（未配置测点）"}`}
-          value={t11}
-          min={0}
-          max={60}
-          step={0.5}
-          unit="°C"
-          onChange={(v) => {
-            setEditing("t11");
-            setT11(v);
-          }}
-          onCommit={(v) => commitBoundary("facility_c", v)}
-        />
-        <BoundarySlider
-          label={`${returnSegment?.label ?? "二次侧回水"}${returnTag ? ` · ${returnTag.id}` : "（未配置测点）"}`}
-          value={t21}
-          min={10}
-          max={70}
-          step={0.5}
-          unit="°C"
-          onChange={(v) => {
-            setEditing("t21");
-            setT21(v);
-          }}
-          onCommit={(v) => commitBoundary("return_c", v)}
-        />
-        <BoundarySlider
-          label="板换 UA"
-          value={uaValue}
-          min={1}
-          max={200}
-          step={1}
-          unit="kW/K"
-          onChange={(v) => {
-            setEditing("ua");
-            setUaValue(v);
-          }}
-          onCommit={(v) => commitBoundary("ua_kw_per_k", v)}
-        />
+        {boundaryOpen && (
+          <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <BoundarySlider
+              label={`${primarySegment?.label ?? "一次侧进水"}${primaryTag ? ` · ${primaryTag.id}` : "（未配置测点）"}`}
+              value={t11}
+              min={0}
+              max={60}
+              step={0.5}
+              unit="°C"
+              onChange={(v) => {
+                setEditing("t11");
+                setT11(v);
+              }}
+              onCommit={(v) => commitBoundary("facility_c", v)}
+            />
+            <BoundarySlider
+              label={`${returnSegment?.label ?? "二次侧回水"}${returnTag ? ` · ${returnTag.id}` : "（未配置测点）"}`}
+              value={t21}
+              min={10}
+              max={70}
+              step={0.5}
+              unit="°C"
+              onChange={(v) => {
+                setEditing("t21");
+                setT21(v);
+              }}
+              onCommit={(v) => commitBoundary("return_c", v)}
+            />
+            <BoundarySlider
+              label="板换 UA"
+              value={uaValue}
+              min={1}
+              max={200}
+              step={1}
+              unit="kW/K"
+              onChange={(v) => {
+                setEditing("ua");
+                setUaValue(v);
+              }}
+              onCommit={(v) => commitBoundary("ua_kw_per_k", v)}
+            />
+          </div>
+        )}
       </div>
 
       {error && <div className="col-span-full text-[10px] text-red-600 dark:text-red-300">{error}</div>}

@@ -31,6 +31,15 @@ try {
   });
   await new Promise((r) => setTimeout(r, 800));
 
+  // 边界条件默认折叠，先展开再操作
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").trim().startsWith("边界条件"),
+    );
+    btn?.click();
+  });
+  await new Promise((r) => setTimeout(r, 300));
+
   const thumbs = await page.$$('[role="slider"]');
   console.log(`sliders found: ${thumbs.length}`);
   const labels = await page.$$eval('[role="slider"]', (els) =>

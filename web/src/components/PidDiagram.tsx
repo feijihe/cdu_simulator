@@ -1,4 +1,13 @@
 import { useEffect, useRef, type RefObject } from "react";
+import {
+  Activity,
+  FlaskConical,
+  Gauge,
+  Ruler,
+  Thermometer,
+  Waves,
+  type LucideIcon,
+} from "lucide-react";
 import type {
   PointSample,
   PumpEquipment,
@@ -7,7 +16,14 @@ import type {
   ValveEquipment,
 } from "@/lib/api";
 import { displayValue, unitFor } from "@/lib/api";
-import { flowValue, heatExchangerOf, onSegment } from "@/lib/topology";
+import {
+  flowValue,
+  heatExchangerOf,
+  isFlowUnit,
+  isPressureUnit,
+  isTempUnit,
+  onSegment,
+} from "@/lib/topology";
 
 interface Props {
   points: Map<string, PointSample>;
@@ -15,6 +31,9 @@ interface Props {
   selected: string;
   mode: "eng" | "raw";
   onSelect: (id: string) => void;
+  /** 配置页预览：不显示实时值/流量，只验证布局 */
+  preview?: boolean;
+  className?: string;
 }
 
 const W = 1040;
@@ -56,6 +75,17 @@ interface FlowHandle {
 
 function pipeColor(loop: "primary" | "secondary") {
   return loop === "primary" ? "var(--pipe-primary)" : "var(--pipe-secondary)";
+}
+
+/** 系统图传感器图标：按工程量类型区分，不依赖具体位号。 */
+function sensorIcon(point: PointSample): { Icon: LucideIcon; color: string } {
+  const unit = point.unit.trim().toLowerCase();
+  if (isTempUnit(unit)) return { Icon: Thermometer, color: "#f59e0b" };
+  if (isPressureUnit(unit)) return { Icon: Gauge, color: "#8b5cf6" };
+  if (isFlowUnit(unit)) return { Icon: Waves, color: "#06b6d4" };
+  if (unit === "ph") return { Icon: FlaskConical, color: "#10b981" };
+  if (unit === "%") return { Icon: Ruler, color: "#eab308" };
+  return { Icon: Activity, color: "var(--pid-muted)" };
 }
 
 function hxEdge(segment: Segment) {
@@ -153,6 +183,7 @@ function Sensor({
   pipeY,
   selected,
   mode,
+  preview,
   onClick,
 }: {
   p: PointSample;
@@ -161,6 +192,7 @@ function Sensor({
   pipeY: number;
   selected: string;
   mode: "eng" | "raw";
+  preview?: boolean;
   onClick: (id: string) => void;
 }) {
   const active = p.id === selected;
@@ -168,6 +200,7 @@ function Sensor({
   const below = pipeY > y;
   const start = below ? 8 : -24;
   const end = pipeY - y;
+  const { Icon, color } = sensorIcon(p);
 
   return (
     <g
@@ -190,6 +223,9 @@ function Sensor({
       <text x={-29} y={-11} fontSize={9} fill="var(--pid-muted)" fontFamily="ui-monospace, monospace">
         {p.id}
       </text>
+      <g transform="translate(15,-22)" aria-hidden="true">
+        <Icon size={12} strokeWidth={1.8} color={color} />
+      </g>
       <text
         x={-29}
         y={3}
@@ -198,10 +234,10 @@ function Sensor({
         fill={active ? "var(--pid-active-text)" : "var(--pid-text)"}
         fontFamily="ui-monospace, monospace"
       >
-        {present ? displayValue(p, mode) : "—"}
+        {preview ? "—" : present ? displayValue(p, mode) : "—"}
       </text>
       <text x={29} y={3} fontSize={8} fill="var(--pid-dim)" textAnchor="end">
-        {present ? unitFor(p, mode) : ""}
+        {preview ? p.unit : present ? unitFor(p, mode) : ""}
       </text>
     </g>
   );
@@ -212,11 +248,13 @@ function ValveSymbol({
   y,
   open,
   label,
+  preview,
 }: {
   x: number;
   y: number;
   open: number;
   label: string;
+  preview?: boolean;
 }) {
   const opacity = 0.15 + 0.85 * Math.min(1, Math.max(0, open / 100));
   return (
@@ -247,7 +285,8 @@ function ValveSymbol({
         strokeWidth={1.4}
       />
       <text x={x} y={y + 30} textAnchor="middle" fontSize={10} fill="var(--pid-muted)">
-        {label} {open.toFixed(0)}%
+        {label}
+        {preview ? "" : ` ${open.toFixed(0)}%`}
       </text>
     </g>
   );
@@ -437,7 +476,15 @@ function pumpBranchPaths(
   return paths;
 }
 
-export default function PidDiagram({ points, topology, selected, mode, onSelect }: Props) {
+export default function PidDiagram({
+  points,
+  topology,
+  selected,
+  mode,
+  onSelect,
+  preview,
+  className = "h-auto w-full",
+}: Props) {
   const handles = useFlowDriver();
 
   if (topology.segments.length === 0) {
@@ -457,7 +504,7 @@ export default function PidDiagram({ points, topology, selected, mode, onSelect 
       .filter((i) => i.item.kind === "pumps" && i.item.pumps.length > 1)
       .map((i) => i.x);
     const paths = segmentPaths(segment, geom, pumpXs);
-    const flow = flowValue(topology, points, segment);
+    const flow = preview ? 0 : flowValue(topology, points, segment);
     return [{ segment, geom, items, paths, flow }];
   });
 
@@ -466,7 +513,12 @@ export default function PidDiagram({ points, topology, selected, mode, onSelect 
   const hxLabelWidth = hxLabel.length * 11 + 12;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="CDU 系统图">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className={className}
+      role="img"
+      aria-label={preview ? "CDU 系统图预览" : "CDU 系统图"}
+    >
       <defs>
         <linearGradient id="hx-grad" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="var(--hx-a)" />
@@ -583,6 +635,7 @@ export default function PidDiagram({ points, topology, selected, mode, onSelect 
                 pipeY={geom.y}
                 selected={selected}
                 mode={mode}
+                preview={preview}
                 onClick={onSelect}
               />
             );
@@ -597,14 +650,15 @@ export default function PidDiagram({ points, topology, selected, mode, onSelect 
                 y={geom.y}
                 open={position?.present ? position.v : 0}
                 label={item.valve.label}
+                preview={preview}
               />
             );
           }
 
           const offsets = pumpOffsets(item.pumps.length);
           return item.pumps.map((pump, index) => {
-            const running = points.get(pump.run)?.v === 1;
-            const fault = pump.fault ? points.get(pump.fault)?.v === 1 : false;
+            const running = !preview && points.get(pump.run)?.v === 1;
+            const fault = !preview && pump.fault ? points.get(pump.fault)?.v === 1 : false;
             return (
               <Pump
                 key={pump.id}
