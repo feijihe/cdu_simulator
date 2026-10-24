@@ -9,14 +9,22 @@ import TagEditor from "@/components/TagEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSimulation } from "@/hooks/useSimulation";
+import { useTopology } from "@/hooks/useTopology";
 import type { PointSample } from "@/lib/api";
+import {
+  defaultSelection,
+  flowPoint,
+  pumpsOf,
+  segmentOf,
+  synthesizeTopology,
+  valveOf,
+} from "@/lib/topology";
 
 type Mode = "eng" | "raw";
 
-function fmt(points: Map<string, PointSample>, id: string, digits: number) {
-  const p = points.get(id);
-  if (!p || !p.present) return "—";
-  return p.v.toFixed(digits);
+function pointValue(point: PointSample | undefined, digits: number) {
+  if (!point || !point.present) return "—";
+  return point.v.toFixed(digits);
 }
 
 function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
@@ -33,8 +41,9 @@ function Stat({ label, value, unit }: { label: string; value: string; unit: stri
 
 export default function App() {
   const { snapshot, status, retry } = useSimulation();
+  const topologyState = useTopology();
   const [mode, setMode] = useState<Mode>("eng");
-  const [selected, setSelected] = useState("T22");
+  const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [history, setHistory] = useState<{ t: number; v: number }[]>([]);
   const [theme, setTheme] = useState<"dark" | "light">(() =>
@@ -57,22 +66,42 @@ export default function App() {
     [snapshot],
   );
 
+  const topology = useMemo(
+    () => topologyState ?? synthesizeTopology(points),
+    [topologyState, points],
+  );
+
+  const selectedId =
+    selected && points.has(selected) ? selected : defaultSelection(topology, points);
+
   useEffect(() => {
     setHistory([]);
-  }, [selected]);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!snapshot) return;
-    const p = points.get(selected);
+    const p = points.get(selectedId);
     if (!p || !p.present) return;
     setHistory((prev) => [...prev.slice(-359), { t: snapshot.ts, v: p.v }]);
-  }, [snapshot, points, selected]);
+  }, [snapshot, points, selectedId]);
 
-  const selectedPoint = points.get(selected);
+  const selectedPoint = points.get(selectedId);
   const editingPoint = editing ? points.get(editing) : undefined;
   const time = snapshot
     ? new Date(snapshot.ts).toLocaleTimeString("zh-CN", { hour12: false })
     : "--:--:--";
+
+  const primarySegment = segmentOf(topology, "primary", "pre_hx");
+  const secondarySegment = segmentOf(topology, "secondary", "post_hx");
+  const primaryFlow = primarySegment
+    ? flowPoint(topology, points, primarySegment)
+    : undefined;
+  const secondaryFlow = secondarySegment
+    ? flowPoint(topology, points, secondarySegment)
+    : undefined;
+  const valve = valveOf(topology);
+  const pumps = pumpsOf(topology);
+  const runningPumps = pumps.filter((p) => points.get(p.run)?.v === 1).length;
 
   return (
     <div className="min-h-screen">
@@ -131,33 +160,52 @@ export default function App() {
         <section className="rounded-xl border border-border bg-card/50 p-2">
           <ControlPanel
             points={points}
+            topology={topology}
             boundary={snapshot?.boundary}
             facility={snapshot?.facility_c}
             returnTemp={snapshot?.return_c}
             ua={snapshot?.ua_kw_per_k}
           />
-          <PidDiagram points={points} selected={selected} mode={mode} onSelect={setSelected} />
+          <PidDiagram
+            points={points}
+            topology={topology}
+            selected={selectedId}
+            mode={mode}
+            onSelect={setSelected}
+          />
           <div className="mt-1 grid grid-cols-2 gap-2 px-2 md:grid-cols-4">
-            <Stat label="一次侧流量 Q1" value={fmt(points, "Q1", 2)} unit="m³/h" />
-            <Stat label="二次侧流量 Q2" value={fmt(points, "Q2", 2)} unit="m³/h" />
-            <Stat label="比例阀开度" value={fmt(points, "VALVE_POS", 1)} unit="%" />
             <Stat
-              label="安全阀"
-              value={points.get("SAFETY_VALVE_OPEN")?.v === 1 ? "开启" : "关闭"}
-              unit=""
+              label={primaryFlow ? `一次侧流量 ${primaryFlow.id}` : "一次侧流量"}
+              value={pointValue(primaryFlow, 2)}
+              unit={primaryFlow?.unit ?? ""}
+            />
+            <Stat
+              label={secondaryFlow ? `二次侧流量 ${secondaryFlow.id}` : "二次侧流量"}
+              value={pointValue(secondaryFlow, 2)}
+              unit={secondaryFlow?.unit ?? ""}
+            />
+            <Stat
+              label={valve ? `${valve.label}开度` : "比例阀开度"}
+              value={pointValue(valve ? points.get(valve.pos) : undefined, 1)}
+              unit="%"
+            />
+            <Stat
+              label="泵运行"
+              value={pumps.length > 0 ? `${runningPumps}/${pumps.length}` : "—"}
+              unit="台"
             />
           </div>
           <div className="px-3 py-2 text-[10px] text-muted-foreground/80">
-            Modbus TCP :1502 · WebSocket /ws · 点表 config/tags.yaml · 模拟量输出原始信号（类型与量程按点配置）
+            Modbus TCP :1502 · WebSocket /ws · 点表 config/tags.yaml · 系统图由 topology 渲染 · 模拟量输出原始信号
           </div>
         </section>
 
         <aside className="flex min-h-0 flex-col gap-4 xl:h-[calc(100vh-88px)]">
-          <KeyMetrics points={points} />
+          <KeyMetrics points={points} topology={topology} />
           <Trend point={selectedPoint} history={history} mode={mode} />
           <PointPanel
             points={snapshot?.points ?? []}
-            selected={selected}
+            selected={selectedId}
             mode={mode}
             onSelect={setSelected}
             onEdit={setEditing}

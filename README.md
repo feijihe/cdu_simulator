@@ -2,7 +2,7 @@
 
 CDU（冷量分配单元）模拟器：没有实机时，给控制程序提供一个**可连接的 Modbus TCP 从站**，并附带一个**实时 Web 监控页**。
 
-当前是 M0 + 基础热模型：接口、执行器动态、水力与集总热工、Web 监控、点位在线编辑都可用；故障注入、场景脚本还没有。
+当前是 M0 + 基础热模型 + 拓扑驱动的系统图：接口、执行器动态、水力与集总热工、Web 监控、点位在线编辑、按 `topology` 渲染 P&ID 都可用；故障注入、场景脚本还没有。
 
 ![Web 监控页](docs/ui.png)
 
@@ -95,9 +95,9 @@ signal:
 ```yaml
 topology:
   segments:
-    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水 }
+    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水, flow: Q1 }
     - { id: p_out, loop: primary,   branch: post_hx, label: 一次侧出水 }
-    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水 }
+    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水, flow: Q2 }
     - { id: s_out, loop: secondary, branch: post_hx, label: 二次侧供液 }
 
   equipment:
@@ -110,16 +110,17 @@ topology:
 ```
 
 - `segments`：管段 id、所属回路、板换前/后、图上流向。`direction` 省略时按「一次侧进 / 二次侧供液朝板换」推导。
-- `equipment`：`heat_exchanger` / `valve` / `pump`，用 `segment` + `order` 定位；同一管段上 `order` 相同的多台泵按并联绘制。
+- `flow`：该管段的流量测点；同一回路的其他管段复用它做流动动画。写 `Q1`/`Q2` 只是示例，换位号不用改前端。
+- `equipment`：`heat_exchanger` / `valve` / `pump`，用 `segment` + `order` 定位；同一管段上 `order` 相同的多台泵按并联绘制。设备标签、命令点、反馈点都来自配置。
 - 传感器位置：`place: { segment: s_in, order: 40 }`。旧写法 `place: { loop, branch, order }` 仍然兼容。
 
-前端把传感器按 `order` 沿管段等距排布；间距不够时自动交错成 1–3 排。**新增传感器只改 `tags.yaml`，删点直接删条目，前端不用动**。没有 `place` 的点（液位、阀位、命令点）只出现在点位表里，不进系统图。
+前端按 `segments` 画管段，按 `direction` 决定流向；传感器和设备共用 `order` 坐标轴沿流向排布，间距不够时自动交错成 1–3 排。**新增传感器只改 `tags.yaml`，换阀/泵/板换只改 `equipment`，前端不用动**。没有 `place` 的点（液位、命令点等）只出现在点位表里，不进系统图。
 
-`--dump-points` 先打印拓扑（管段、设备、设备引用的点位），再打印点表；`GET /api/topology` 返回同一份拓扑的 JSON。加载时会校验：管段/设备 id 唯一、恰好 1 台板换、至多 1 个比例阀、至少 1 台泵，设备引用的点位存在且 AI/AO/DI/DO 方向与可写性正确，传感器 `place.segment` 存在且与管段定义一致。
+`--dump-points` 先打印拓扑（管段、设备、设备引用的点位），再打印点表；`GET /api/topology` 返回同一份拓扑的 JSON。加载时会校验：管段/设备 id 唯一、每个回路每个板换侧只有一条管段、恰好 1 台板换、至多 1 个比例阀、1–2 台泵（模型当前上限，阶段 3 扩展），设备引用的点位存在且 AI/AO/DI/DO 方向与可写性正确，传感器 `place.segment` 存在且与管段定义一致。
+
+没有 `topology` 的旧点表也能打开页面：前端会按 `place.loop` / `place.branch` 合成四条管段，只画板换和传感器，阀门/泵控制会提示未配置。
 
 系统图只画管段、传感器、板换、比例阀和泵；水箱、过滤器、单向阀、安全阀这些非传感器部件不画，它们的点位（如 `LEVEL`、`SAFETY_VALVE_OPEN`）仍在点位表里可查。
-
-> 当前进度：拓扑已解析、校验并随 `--dump-points` / API 输出；前端暂时仍用解析出的 `loop`/`branch` 画四条固定管段，第 2 阶段改为直接按 `segments`/`equipment` 渲染。
 
 ## Modbus 映射
 
@@ -182,7 +183,7 @@ plant:
 - WebSocket 断开时全屏遮罩提示，1.5 s 自动重连，也可以点「立即重试」。
 - 管路流动动画由 `requestAnimationFrame` 直接驱动 `stroke-dashoffset`，与数据刷新解耦，流量变化时也不会重置动画。
 - P&ID 上点击传感器可看趋势；右上角切换「工程值 / 原始信号」。
-- 系统图顶部是手动控制栏：比例阀开度、双泵启停与转速，全部用 shadcn Slider。写入的就是 `VALVE_CMD` / `PUMPx_RUN_CMD` / `PUMPx_SPEED_CMD`，和 Modbus 主站共用同一组命令点。
+- 系统图顶部是手动控制栏：比例阀开度、水泵启停与转速，全部用 shadcn Slider。写入的是 `topology.equipment` 里该设备配置的 `cmd` / `run_cmd` / `speed_cmd` 点，和 Modbus 主站共用同一组命令点。
 - 控制栏还可以设边界温度（一次侧进水、二次侧回水）和板换 `UA`。滑杆设定的是**物理边界**，传感器读数随之变化；显示位号通过 `place` 找该管段上最靠近板换的温度测点，不写死 `T11`/`T21`，改点位名后标签自动跟随。
 - 设定回水温度后按板换换热量直接解出供液温度，`C1·(T12−T11) = C2·(T21−T22)` 瞬时成立；提高 `UA` 会让 `T12` 升高、`T22` 降低。点「自动」恢复配置值。
 - 改泵速会立刻反映到 `Q2` 和 `P22`：两泵流量叠加、供液压力随流量平方上升。
@@ -222,7 +223,7 @@ src/plant.rs          水力 / 热工模型
 src/modbus.rs         Modbus TCP 从站（FC1/3/5/6/15/16）
 src/http.rs           HTTP + WebSocket + 静态页面 + PUT /api/tags/{id}
 src/main.rs           CLI、引擎线程
-web/                  React 监控页
+web/                  React 监控页（系统图与指标按 topology 派生）
 tests/                冒烟与热响应测试
 docs/                 系统分析、实施方案、界面截图
 ```
@@ -234,5 +235,6 @@ docs/                 系统分析、实施方案、界面截图
 - 水箱液位恒为 60%，未做质量平衡；安全阀只置位，不泄放。
 - 页面可以写命令点（阀门、泵），但传感器过程值仍由模型产生，不能强制覆盖。
 - `place` 目前只能在 `tags.yaml` 里改，页面上不提供编辑。
-- 系统图仍按四条固定管段渲染；`topology` 已能解析和输出，但前端还没改成按 `segments`/`equipment` 动态排版。
+- 系统图按「一次侧 / 二次侧 × 板换前 / 后」四个标准位置排版；更复杂的管路网络（多板换、串并联支路）不在当前模型范围内。
+- `Plant` 模型仍按 `VALVE_CMD`、`PUMP1/2_*`、`Q1/Q2`、`T11/T21` 等固定位号读写（阶段 3 改为按 topology 映射）；在这些位号保持不变时，前端可以自由调整设备与测点。
 - 未做多 unit id、FC2/FC4 点位。

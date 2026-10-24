@@ -43,9 +43,9 @@ plant:
 #   sensors   在 tags[].place 里用 { segment, order } 挂到管段上。
 topology:
   segments:
-    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水 }
+    - { id: p_in,  loop: primary,   branch: pre_hx,  label: 一次侧进水, flow: Q1 }
     - { id: p_out, loop: primary,   branch: post_hx, label: 一次侧出水 }
-    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水 }
+    - { id: s_in,  loop: secondary, branch: pre_hx,  label: 二次侧回水, flow: Q2 }
     - { id: s_out, loop: secondary, branch: post_hx, label: 二次侧供液 }
 
   equipment:

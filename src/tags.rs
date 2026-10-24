@@ -220,7 +220,7 @@ impl Default for Presence {
 }
 
 /// 传感器在系统图上的归属：一次侧 / 二次侧，板换前 / 板换后。
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum LoopSide {
     Primary,
@@ -236,7 +236,7 @@ impl LoopSide {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Branch {
     PreHx,
@@ -302,6 +302,9 @@ pub struct Segment {
     /// 图上流向；省略时按「一次侧进 / 二次侧出朝板换」推导
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<Direction>,
+    /// 该管段的流量测点；同一回路的其他管段会复用它做流动动画
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
@@ -890,12 +893,42 @@ impl PointTable {
         }
 
         let mut segments: HashMap<&str, &Segment> = HashMap::new();
+        let mut slots: HashMap<(LoopSide, Branch), &str> = HashMap::new();
         for seg in &topo.segments {
             if seg.id.trim().is_empty() {
                 bail!("topology.segments 中存在空 id");
             }
             if segments.insert(seg.id.as_str(), seg).is_some() {
                 bail!("重复的管段 id: {}", seg.id);
+            }
+            if let Some(prev) = slots.insert((seg.loop_side, seg.branch), seg.id.as_str()) {
+                bail!(
+                    "管段 {} 与 {} 的 loop/branch 重复（每个回路每个板换侧只能有一条管段）",
+                    seg.id,
+                    prev
+                );
+            }
+            if let Some(flow) = &seg.flow {
+                let tag =
+                    self.tags.iter().find(|t| t.id == *flow).with_context(|| {
+                        format!("管段 {} 的 flow 点 {} 不在点表中", seg.id, flow)
+                    })?;
+                if tag.kind != Kind::Ai {
+                    bail!("管段 {} 的 flow 点 {} 必须是 AI", seg.id, flow);
+                }
+                let on_segment = tag
+                    .place
+                    .as_ref()
+                    .is_some_and(|place| match &place.segment {
+                        Some(id) => id == &seg.id,
+                        None => {
+                            place.loop_side == Some(seg.loop_side)
+                                && place.branch == Some(seg.branch)
+                        }
+                    });
+                if !on_segment {
+                    bail!("管段 {} 的 flow 点 {} 不在该管段上", seg.id, flow);
+                }
             }
         }
 
@@ -945,6 +978,9 @@ impl PointTable {
         }
         if pump_count == 0 {
             bail!("topology 至少需要 1 台 pump");
+        }
+        if pump_count > 2 {
+            bail!("当前模型最多支持 2 台泵（阶段 3 扩展到 N 台），topology 中有 {pump_count} 台");
         }
 
         for tag in &self.tags {
@@ -1106,9 +1142,10 @@ tags:
   - { id: PUMP_RUN, desc: 泵运行, kind: di, modbus: { fc: 1, addr: 0 } }
   - { id: PUMP_SPEED_CMD, desc: 泵转速, kind: ao, unit: "%", range: [0, 100], writable: true, modbus: { fc: 3, addr: 201 } }
   - { id: T11, desc: 温度, kind: ai, unit: "°C", range: [0, 80], place: { segment: s_in, order: 10 }, modbus: { fc: 3, addr: 101 } }
+  - { id: Q2, desc: 流量, kind: ai, unit: "m3/h", range: [0, 10], place: { segment: s_in, order: 12 }, modbus: { fc: 3, addr: 102 } }
 topology:
   segments:
-    - { id: s_in, loop: secondary, branch: pre_hx, label: 回水 }
+    - { id: s_in, loop: secondary, branch: pre_hx, label: 回水, flow: Q2 }
     - { id: s_out, loop: secondary, branch: post_hx }
   equipment:
     - { id: HX1, type: heat_exchanger }
@@ -1126,6 +1163,7 @@ topology:
         let topo = table.topology.as_ref().unwrap();
 
         assert_eq!(topo.segments.len(), 2);
+        assert_eq!(topo.segments[0].flow.as_deref(), Some("Q2"));
         assert_eq!(topo.segments[0].direction(), Direction::Reverse);
         assert_eq!(topo.segments[1].direction(), Direction::Forward);
         // 省略 label 时回落到 id；方向在解析阶段固化，便于直接序列化
@@ -1166,6 +1204,28 @@ topology:
             "    - { id: s_in, loop: secondary, branch: post_hx }",
         );
         assert!(error(&yaml).contains("重复的管段"), "{}", error(&yaml));
+    }
+
+    #[test]
+    fn rejects_duplicate_loop_branch() {
+        let yaml = BASE.replace(
+            "    - { id: s_out, loop: secondary, branch: post_hx }",
+            "    - { id: s_out, loop: secondary, branch: pre_hx }",
+        );
+        assert!(
+            error(&yaml).contains("loop/branch 重复"),
+            "{}",
+            error(&yaml)
+        );
+    }
+
+    #[test]
+    fn rejects_flow_point_on_other_segment() {
+        let yaml = BASE.replace(
+            "place: { segment: s_in, order: 12 }",
+            "place: { segment: s_out, order: 12 }",
+        );
+        assert!(error(&yaml).contains("不在该管段上"), "{}", error(&yaml));
     }
 
     #[test]

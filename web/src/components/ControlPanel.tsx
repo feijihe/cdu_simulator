@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import type { Boundary, PointSample } from "@/lib/api";
+import type { Boundary, PointSample, Topology } from "@/lib/api";
 import { clearBoundary, putBoundary, putPoint } from "@/lib/api";
+import { pumpsOf, segmentOf, tempOn, valveOf } from "@/lib/topology";
 
 interface Props {
   points: Map<string, PointSample>;
+  topology: Topology;
   boundary?: Boundary;
   facility?: number;
   returnTemp?: number;
@@ -18,25 +20,6 @@ type EditField = "t11" | "t21" | "ua";
 function num(points: Map<string, PointSample>, id: string) {
   const p = points.get(id);
   return p && p.present ? p.v : 0;
-}
-
-const TEMP_UNITS = new Set(["°c", "c", "°f", "f", "k"]);
-
-/** 按 place 找管段上最靠近板换的温度测点，不依赖具体位号 */
-function pickTemp(
-  points: Map<string, PointSample>,
-  loop: "primary" | "secondary",
-  branch: "pre_hx" | "post_hx",
-) {
-  return [...points.values()]
-    .filter(
-      (p) =>
-        p.place &&
-        p.place.loop === loop &&
-        p.place.branch === branch &&
-        TEMP_UNITS.has(p.unit.trim().toLowerCase()),
-    )
-    .sort((a, b) => b.place!.order - a.place!.order)[0];
 }
 
 function CommandSlider({
@@ -104,12 +87,23 @@ function BoundarySlider({
   );
 }
 
-export default function ControlPanel({ points, boundary, facility, returnTemp, ua }: Props) {
+export default function ControlPanel({
+  points,
+  topology,
+  boundary,
+  facility,
+  returnTemp,
+  ua,
+}: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditField | null>(null);
 
-  const primaryTag = pickTemp(points, "primary", "pre_hx");
-  const returnTag = pickTemp(points, "secondary", "pre_hx");
+  const valve = valveOf(topology);
+  const pumps = pumpsOf(topology);
+  const primarySegment = segmentOf(topology, "primary", "pre_hx");
+  const returnSegment = segmentOf(topology, "secondary", "pre_hx");
+  const primaryTag = tempOn(points, primarySegment);
+  const returnTag = tempOn(points, returnSegment);
 
   const t11Target = boundary?.facility_c ?? facility ?? 30;
   const t21Target = boundary?.return_c ?? returnTemp ?? 40;
@@ -161,50 +155,57 @@ export default function ControlPanel({ points, boundary, facility, returnTemp, u
     }
   };
 
-  const valveCmd = num(points, "VALVE_CMD");
-  const valvePos = num(points, "VALVE_POS");
-
-  const pumps = [1, 2].map((index) => ({
-    index,
-    runCmd: points.get(`PUMP${index}_RUN_CMD`)?.v === 1,
-    runFb: points.get(`PUMP${index}_RUN`)?.v === 1,
-    speedCmd: num(points, `PUMP${index}_SPEED_CMD`),
-  }));
+  const valveCmd = valve ? num(points, valve.cmd) : 0;
+  const valvePos = valve ? num(points, valve.pos) : 0;
 
   return (
     <div className="mb-2 grid grid-cols-1 gap-3 rounded-lg border border-border bg-card/60 px-3 py-2 md:grid-cols-3">
-      <div>
-        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>比例阀开度</span>
-          <span className="font-mono text-muted-foreground">实际 {valvePos.toFixed(1)}%</span>
-        </div>
-        <CommandSlider value={valveCmd} onCommit={(v) => send("VALVE_CMD", { value: v })} />
-      </div>
-
-      {pumps.map((pump) => (
-        <div key={pump.index} className="md:border-l md:border-border md:pl-4">
+      {valve ? (
+        <div>
           <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              泵 {pump.index}
-              <Badge variant={pump.runFb ? "success" : "outline"}>
-                {pump.runFb ? "运行" : "停止"}
-              </Badge>
-            </span>
-            <Button
-              size="sm"
-              variant={pump.runCmd ? "secondary" : "outline"}
-              className="h-5 px-2 text-[10px]"
-              onClick={() => send(`PUMP${pump.index}_RUN_CMD`, { on: !pump.runCmd })}
-            >
-              {pump.runCmd ? "停止" : "启动"}
-            </Button>
+            <span>{valve.label}</span>
+            <span className="font-mono text-muted-foreground">实际 {valvePos.toFixed(1)}%</span>
           </div>
           <CommandSlider
-            value={pump.speedCmd}
-            onCommit={(v) => send(`PUMP${pump.index}_SPEED_CMD`, { value: v })}
+            value={valveCmd}
+            onCommit={(v) => send(valve.cmd, { value: v })}
           />
         </div>
-      ))}
+      ) : (
+        <div className="flex items-center text-[11px] text-muted-foreground">
+          点表未在 topology 中配置比例阀
+        </div>
+      )}
+
+      {pumps.map((pump) => {
+        const runCmd = points.get(pump.run_cmd)?.v === 1;
+        const runFb = points.get(pump.run)?.v === 1;
+        const fault = pump.fault ? points.get(pump.fault)?.v === 1 : false;
+        return (
+          <div key={pump.id} className="md:border-l md:border-border md:pl-4">
+            <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                {pump.label}
+                <Badge variant={fault ? "danger" : runFb ? "success" : "outline"}>
+                  {fault ? "故障" : runFb ? "运行" : "停止"}
+                </Badge>
+              </span>
+              <Button
+                size="sm"
+                variant={runCmd ? "secondary" : "outline"}
+                className="h-5 px-2 text-[10px]"
+                onClick={() => send(pump.run_cmd, { on: !runCmd })}
+              >
+                {runCmd ? "停止" : "启动"}
+              </Button>
+            </div>
+            <CommandSlider
+              value={num(points, pump.speed_cmd)}
+              onCommit={(v) => send(pump.speed_cmd, { value: v })}
+            />
+          </div>
+        );
+      })}
 
       <div className="col-span-full flex flex-wrap items-center gap-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
         <span className="text-muted-foreground">边界条件</span>
@@ -226,7 +227,7 @@ export default function ControlPanel({ points, boundary, facility, returnTemp, u
 
       <div className="col-span-full grid grid-cols-1 gap-3 md:grid-cols-3">
         <BoundarySlider
-          label={`一次侧进水${primaryTag ? ` · ${primaryTag.id}` : "（未配置测点）"}`}
+          label={`${primarySegment?.label ?? "一次侧进水"}${primaryTag ? ` · ${primaryTag.id}` : "（未配置测点）"}`}
           value={t11}
           min={0}
           max={60}
@@ -239,7 +240,7 @@ export default function ControlPanel({ points, boundary, facility, returnTemp, u
           onCommit={(v) => commitBoundary("facility_c", v)}
         />
         <BoundarySlider
-          label={`二次侧回水${returnTag ? ` · ${returnTag.id}` : "（未配置测点）"}`}
+          label={`${returnSegment?.label ?? "二次侧回水"}${returnTag ? ` · ${returnTag.id}` : "（未配置测点）"}`}
           value={t21}
           min={10}
           max={70}

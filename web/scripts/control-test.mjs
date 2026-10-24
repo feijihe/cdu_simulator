@@ -19,6 +19,18 @@ async function put(id, body) {
   });
 }
 
+/** 用键盘把第 index 个滑杆设到 value（Radix 滑杆支持 Home/方向键）。 */
+async function setSlider(page, index, value) {
+  const thumbs = await page.$$('[role="slider"]');
+  const thumb = thumbs[index];
+  if (!thumb) throw new Error(`slider ${index} not found`);
+  await thumb.focus();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < value; i += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+}
+
 const browser = await puppeteer.launch({
   executablePath: edge,
   headless: true,
@@ -74,15 +86,8 @@ try {
     console.log("FAIL pump running at 0% adds no flow");
   }
 
-  // 泵 2 转速滑杆（第 3 个 range）拖到 80%
-  await page.evaluate(() => {
-    const slider = document.querySelectorAll('input[type="range"]')[2];
-    if (!slider) return;
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    setter.call(slider, 80);
-    slider.dispatchEvent(new Event("input", { bubbles: true }));
-    slider.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-  });
+  // 泵 2 转速滑杆（第 3 个）拖到 80%
+  await setSlider(page, 2, 80);
   await new Promise((r) => setTimeout(r, 2200));
   const afterSpeed = await points();
   const q2After = afterSpeed.get("Q2").v;
@@ -94,15 +99,8 @@ try {
     console.log("FAIL pump speed affects Q2 via UI");
   }
 
-  // 比例阀滑杆（第 1 个 range）拖到 60%
-  await page.evaluate(() => {
-    const slider = document.querySelectorAll('input[type="range"]')[0];
-    if (!slider) return;
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    setter.call(slider, 60);
-    slider.dispatchEvent(new Event("input", { bubbles: true }));
-    slider.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-  });
+  // 比例阀滑杆（第 1 个）拖到 60%
+  await setSlider(page, 0, 60);
   await new Promise((r) => setTimeout(r, 1500));
   const afterValve = await points();
   const valveCmd = afterValve.get("VALVE_CMD").v;

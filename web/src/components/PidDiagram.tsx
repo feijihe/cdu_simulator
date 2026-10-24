@@ -1,9 +1,17 @@
 import { useEffect, useRef, type RefObject } from "react";
-import type { PointSample } from "@/lib/api";
+import type {
+  PointSample,
+  PumpEquipment,
+  Segment,
+  Topology,
+  ValveEquipment,
+} from "@/lib/api";
 import { displayValue, unitFor } from "@/lib/api";
+import { flowValue, heatExchangerOf, onSegment } from "@/lib/topology";
 
 interface Props {
   points: Map<string, PointSample>;
+  topology: Topology;
   selected: string;
   mode: "eng" | "raw";
   onSelect: (id: string) => void;
@@ -11,43 +19,48 @@ interface Props {
 
 const W = 1040;
 const H = 640;
+const HX = { x: 450, y: 250, w: 110, h: 150 };
 
-interface Lane {
-  loop: "primary" | "secondary";
-  branch: "pre_hx" | "post_hx";
+interface LaneGeom {
   y: number;
   x1: number;
   x2: number;
-  flow: 1 | -1;
+  outer: number;
+  inner: number;
   side: "above" | "below";
   baseY: number;
 }
 
 /**
- * 四条管段的布局参数。传感器不写死坐标：按 place.loop / place.branch 归到一条管段，
- * 再按 place.order 沿流向等距排布，新增/删除点位不需要改前端。
+ * 四条管段的几何：板换在中间，一次侧在左、二次侧在右。
+ * 坐标只和「回路 + 板换前后」有关，不依赖具体点位/设备数量。
  */
-const LANES: Lane[] = [
-  { loop: "primary", branch: "pre_hx", y: 480, x1: 60, x2: 430, flow: 1, side: "below", baseY: 545 },
-  { loop: "primary", branch: "post_hx", y: 200, x1: 60, x2: 430, flow: -1, side: "above", baseY: 148 },
-  { loop: "secondary", branch: "pre_hx", y: 200, x1: 650, x2: 990, flow: -1, side: "above", baseY: 148 },
-  { loop: "secondary", branch: "post_hx", y: 480, x1: 830, x2: 1000, flow: 1, side: "below", baseY: 545 },
-];
+const GEOM: Record<string, LaneGeom> = {
+  "primary:pre_hx": { y: 480, x1: 60, x2: 430, outer: 20, inner: 480, side: "below", baseY: 545 },
+  "primary:post_hx": { y: 200, x1: 60, x2: 430, outer: 20, inner: 480, side: "above", baseY: 148 },
+  "secondary:pre_hx": { y: 200, x1: 590, x2: 990, outer: 1020, inner: 530, side: "above", baseY: 148 },
+  "secondary:post_hx": { y: 480, x1: 590, x2: 990, outer: 1020, inner: 530, side: "below", baseY: 545 },
+};
 
-function get(points: Map<string, PointSample>, id: string) {
-  return points.get(id);
-}
-
-function flowOf(points: Map<string, PointSample>, id: string) {
-  const p = points.get(id);
-  return p && p.present ? Math.max(0, p.v) : 0;
-}
+type LaneItem =
+  | { kind: "sensor"; point: PointSample; order: number; span: number; key: string }
+  | { kind: "valve"; valve: ValveEquipment; order: number; span: number; key: string }
+  | { kind: "pumps"; pumps: PumpEquipment[]; order: number; span: number; key: string };
 
 interface FlowHandle {
   el: SVGPathElement | null;
   speed: number;
   target: number;
   offset: number;
+}
+
+function pipeColor(loop: "primary" | "secondary") {
+  return loop === "primary" ? "var(--pipe-primary)" : "var(--pipe-secondary)";
+}
+
+function hxEdge(segment: Segment) {
+  if (segment.loop === "primary") return segment.branch === "pre_hx" ? 400 : 250;
+  return segment.branch === "pre_hx" ? 250 : 400;
 }
 
 /**
@@ -194,18 +207,66 @@ function Sensor({
   );
 }
 
+function ValveSymbol({
+  x,
+  y,
+  open,
+  label,
+}: {
+  x: number;
+  y: number;
+  open: number;
+  label: string;
+}) {
+  const opacity = 0.15 + 0.85 * Math.min(1, Math.max(0, open / 100));
+  return (
+    <g>
+      <line x1={x} y1={y - 12} x2={x} y2={y - 28} stroke="var(--pid-muted)" strokeWidth={2} />
+      <rect
+        x={x - 10}
+        y={y - 38}
+        width={20}
+        height={10}
+        rx={2}
+        fill="var(--pid-actuator)"
+        stroke="var(--pid-muted)"
+        strokeWidth={1.2}
+      />
+      <polygon
+        points={`${x - 18},${y - 14} ${x - 18},${y + 14} ${x},${y}`}
+        fill="var(--pid-accent)"
+        opacity={opacity}
+        stroke="var(--pid-accent)"
+        strokeWidth={1.4}
+      />
+      <polygon
+        points={`${x + 18},${y - 14} ${x + 18},${y + 14} ${x},${y}`}
+        fill="var(--pid-accent)"
+        opacity={opacity}
+        stroke="var(--pid-accent)"
+        strokeWidth={1.4}
+      />
+      <text x={x} y={y + 30} textAnchor="middle" fontSize={10} fill="var(--pid-muted)">
+        {label} {open.toFixed(0)}%
+      </text>
+    </g>
+  );
+}
+
 function Pump({
   x,
   y,
   running,
   fault,
   label,
+  labelAbove,
 }: {
   x: number;
   y: number;
   running: boolean;
   fault: boolean;
   label: string;
+  labelAbove?: boolean;
 }) {
   const color = fault ? "var(--danger)" : running ? "var(--ok)" : "var(--pid-dim)";
   return (
@@ -221,11 +282,23 @@ function Pump({
         <line x1={x - 9} y1={y} x2={x + 9} y2={y} stroke={running ? "var(--ok-soft)" : "var(--pid-dim)"} strokeWidth={2} />
         <line x1={x} y1={y - 9} x2={x} y2={y + 9} stroke={running ? "var(--ok-soft)" : "var(--pid-dim)"} strokeWidth={2} />
       </g>
-      <text x={x} y={y + 30} textAnchor="middle" fontSize={9} fill="var(--pid-muted)">
+      <text
+        x={x}
+        y={y + (labelAbove ? -22 : 30)}
+        textAnchor="middle"
+        fontSize={9}
+        fill="var(--pid-muted)"
+      >
         {label}
       </text>
       {fault && (
-        <text x={x} y={y - 21} textAnchor="middle" fontSize={8} fill="var(--danger)">
+        <text
+          x={x}
+          y={y + (labelAbove ? 30 : -21)}
+          textAnchor="middle"
+          fontSize={8}
+          fill="var(--danger)"
+        >
           FAULT
         </text>
       )}
@@ -233,19 +306,164 @@ function Pump({
   );
 }
 
-export default function PidDiagram({ points, selected, mode, onSelect }: Props) {
-  const q1 = flowOf(points, "Q1");
-  const q2 = flowOf(points, "Q2");
-  const valve = get(points, "VALVE_POS")?.v ?? 0;
-  const pump1 = get(points, "PUMP1_RUN");
-  const pump2 = get(points, "PUMP2_RUN");
-  const fault1 = get(points, "PUMP1_FAULT")?.v === 1;
-  const fault2 = get(points, "PUMP2_FAULT")?.v === 1;
+function buildItems(
+  segment: Segment,
+  points: Map<string, PointSample>,
+  topology: Topology,
+): LaneItem[] {
+  const items: LaneItem[] = [];
 
-  const valveOpacity = 0.15 + 0.85 * Math.min(1, Math.max(0, valve / 100));
+  for (const point of points.values()) {
+    if (onSegment(point, segment)) {
+      items.push({
+        kind: "sensor",
+        point,
+        order: point.place?.order ?? 0,
+        span: 1,
+        key: point.id,
+      });
+    }
+  }
+
+  for (const equipment of topology.equipment) {
+    if (equipment.type === "valve" && equipment.segment === segment.id) {
+      items.push({
+        kind: "valve",
+        valve: equipment,
+        order: equipment.order,
+        span: 1,
+        key: equipment.id,
+      });
+    }
+  }
+
+  const pumpsByOrder = new Map<number, PumpEquipment[]>();
+  for (const equipment of topology.equipment) {
+    if (equipment.type !== "pump" || equipment.segment !== segment.id) continue;
+    const group = pumpsByOrder.get(equipment.order) ?? [];
+    group.push(equipment);
+    pumpsByOrder.set(equipment.order, group);
+  }
+  for (const [order, pumps] of pumpsByOrder) {
+    items.push({
+      kind: "pumps",
+      pumps,
+      order,
+      span: 2,
+      key: pumps.map((p) => p.id).join("+"),
+    });
+  }
+
+  return items.sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
+}
+
+/** order 沿流向递增；设备按 span 占位（泵簇占 2 格），避免和传感器重叠。 */
+function placeItems(items: LaneItem[], segment: Segment, geom: LaneGeom) {
+  const total = items.reduce((sum, item) => sum + item.span, 0) || 1;
+  const step = (geom.x2 - geom.x1) / (total + 1);
+  let cursor = 0;
+
+  return items.map((item) => {
+    const center = cursor + item.span / 2;
+    cursor += item.span;
+    const x =
+      segment.direction === "reverse"
+        ? geom.x2 - center * step
+        : geom.x1 + center * step;
+    return { item, x, step };
+  });
+}
+
+/** 把管段水平线在泵簇处断开，并接上板换立管。 */
+function segmentPaths(segment: Segment, geom: LaneGeom, pumpXs: number[]) {
+  const innerAtRight = geom.inner > geom.outer;
+  const endsAtInner =
+    innerAtRight ? segment.direction === "forward" : segment.direction === "reverse";
+  const left = Math.min(geom.outer, geom.inner);
+  const right = Math.max(geom.outer, geom.inner);
+
+  const spans: [number, number][] = [];
+  let cursor = left;
+  for (const cx of [...pumpXs].sort((a, b) => a - b)) {
+    const a = Math.max(left, cx - 55);
+    const b = Math.min(right, cx + 55);
+    if (a > cursor + 1) spans.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < right - 1) spans.push([cursor, right]);
+
+  const ordered = segment.direction === "forward" ? spans : [...spans].reverse();
+  const pieces = ordered.map(([a, b]) =>
+    segment.direction === "forward"
+      ? `M ${a} ${geom.y} H ${b}`
+      : `M ${b} ${geom.y} H ${a}`,
+  );
+  if (pieces.length === 0) return [];
+
+  const edge = hxEdge(segment);
+  if (endsAtInner) {
+    const last = pieces.length - 1;
+    pieces[last] = `${pieces[last]} V ${edge}`;
+  } else {
+    const [a, b] = ordered[0];
+    const end = segment.direction === "forward" ? b : a;
+    pieces[0] = `M ${geom.inner} ${edge} V ${geom.y} H ${end}`;
+  }
+
+  return pieces;
+}
+
+function pumpOffsets(count: number) {
+  if (count <= 1) return [0];
+  const gap = count > 3 ? 38 : 50;
+  return Array.from({ length: count }, (_, i) => (i - (count - 1) / 2) * gap);
+}
+
+function pumpBranchPaths(
+  x: number,
+  y: number,
+  offsets: number[],
+  direction: "forward" | "reverse",
+) {
+  const paths: string[] = [];
+  const dir = direction === "forward" ? 1 : -1;
+  for (const offset of offsets) {
+    if (Math.abs(offset) < 1) {
+      paths.push(`M ${x - 55 * dir} ${y} H ${x + 55 * dir}`);
+    } else {
+      paths.push(`M ${x - 55 * dir} ${y} V ${y + offset} H ${x + 55 * dir} V ${y}`);
+    }
+  }
+  return paths;
+}
+
+export default function PidDiagram({ points, topology, selected, mode, onSelect }: Props) {
   const handles = useFlowDriver();
 
-  const all = Array.from(points.values());
+  if (topology.segments.length === 0) {
+    return (
+      <div className="flex h-72 items-center justify-center text-xs text-muted-foreground">
+        点表里没有可绘制的位置：请给传感器加 place，或在 topology 中定义 segments
+      </div>
+    );
+  }
+
+  const lanes = topology.segments.flatMap((segment) => {
+    const geom = GEOM[`${segment.loop}:${segment.branch}`];
+    if (!geom) return [];
+    const items = placeItems(buildItems(segment, points, topology), segment, geom);
+    // 单泵直接串在主管上；多泵才需要把主管断开画并联支路
+    const pumpXs = items
+      .filter((i) => i.item.kind === "pumps" && i.item.pumps.length > 1)
+      .map((i) => i.x);
+    const paths = segmentPaths(segment, geom, pumpXs);
+    const flow = flowValue(topology, points, segment);
+    return [{ segment, geom, items, paths, flow }];
+  });
+
+  const hx = heatExchangerOf(topology);
+  const hxLabel = hx?.label ?? "板换";
+  const hxLabelWidth = hxLabel.length * 11 + 12;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="CDU 系统图">
@@ -258,25 +476,63 @@ export default function PidDiagram({ points, selected, mode, onSelect }: Props) 
       </defs>
 
       <text x={30} y={40} fontSize={13} fontWeight={600} fill="var(--pipe-primary)">
-        一次侧 · 设施水
+        一次侧
       </text>
       <text x={1010} y={40} fontSize={13} fontWeight={600} fill="var(--pipe-secondary)" textAnchor="end">
-        二次侧 · 机柜回路
+        二次侧
       </text>
 
-      {/* 管路 */}
-      <Pipe id="p-in" d="M 20 480 H 480 V 400" color="var(--pipe-primary)" flow={q1} handles={handles} />
-      <Pipe id="p-out" d="M 480 250 V 200 H 20" color="var(--pipe-primary)" flow={q1} handles={handles} />
-      <Pipe id="s-in" d="M 1020 200 H 530 V 250" color="var(--pipe-secondary)" flow={q2} handles={handles} />
-      <Pipe id="s-mid" d="M 530 400 V 480 H 665" color="var(--pipe-secondary)" flow={q2} handles={handles} />
-      <Pipe id="s-out" d="M 790 480 H 1020" color="var(--pipe-secondary)" flow={q2} handles={handles} />
+      {/* 主管段 */}
+      {lanes.map(({ segment, paths, flow }) =>
+        paths.map((d, i) => (
+          <Pipe
+            key={`${segment.id}-${i}`}
+            id={`${segment.id}-${i}`}
+            d={d}
+            color={pipeColor(segment.loop)}
+            flow={flow}
+            handles={handles}
+          />
+        )),
+      )}
 
       {/* 泵并联支路 */}
-      <Pipe id="s-p1" d="M 665 480 V 455 H 790 V 480" color="var(--pipe-secondary)" flow={q2 / 2} handles={handles} />
-      <Pipe id="s-p2" d="M 665 480 V 505 H 790 V 480" color="var(--pipe-secondary)" flow={q2 / 2} handles={handles} />
+      {lanes.map(({ segment, items, flow }) =>
+        items.map(({ item, x }) => {
+          if (item.kind !== "pumps") return null;
+          // 单泵直接串在主管上，不画并联支路
+          if (item.pumps.length <= 1) return null;
+          const offsets = pumpOffsets(item.pumps.length);
+          const running = item.pumps.filter((p) => points.get(p.run)?.v === 1).length;
+          return pumpBranchPaths(
+            x,
+            GEOM[`${segment.loop}:${segment.branch}`].y,
+            offsets,
+            segment.direction,
+          ).map((d, i) => (
+            <Pipe
+              key={`${segment.id}-pump-${item.key}-${i}`}
+              id={`${segment.id}-pump-${item.key}-${i}`}
+              d={d}
+              color={pipeColor(segment.loop)}
+              flow={points.get(item.pumps[i].run)?.v === 1 ? flow / Math.max(1, running) : 0}
+              handles={handles}
+            />
+          ));
+        }),
+      )}
 
       {/* 板换 */}
-      <rect x={450} y={250} width={110} height={150} rx={8} fill="url(#hx-grad)" stroke="var(--pid-border)" strokeWidth={1.5} />
+      <rect
+        x={HX.x}
+        y={HX.y}
+        width={HX.w}
+        height={HX.h}
+        rx={8}
+        fill="url(#hx-grad)"
+        stroke="var(--pid-border)"
+        strokeWidth={1.5}
+      />
       <polyline
         points="466,388 493,368 466,348 493,328 466,308 493,288 466,268"
         fill="none"
@@ -292,76 +548,76 @@ export default function PidDiagram({ points, selected, mode, onSelect }: Props) 
         opacity={0.55}
       />
       <line x1={505} y1={258} x2={505} y2={392} stroke="var(--pid-border)" strokeDasharray="3 4" />
-      <text x={505} y={424} textAnchor="middle" fontSize={11} fill="var(--pid-muted)">
-        板换
+      <rect
+        x={505 - hxLabelWidth / 2}
+        y={412}
+        width={hxLabelWidth}
+        height={18}
+        rx={4}
+        fill="var(--pid-chip)"
+      />
+      <text x={505} y={425} textAnchor="middle" fontSize={11} fill="var(--pid-muted)">
+        {hxLabel}
       </text>
 
-      {/* 比例阀 */}
-      <g>
-        <line x1={330} y1={188} x2={330} y2={172} stroke="var(--pid-muted)" strokeWidth={2} />
-        <rect x={320} y={162} width={20} height={10} rx={2} fill="var(--pid-actuator)" stroke="var(--pid-muted)" strokeWidth={1.2} />
-        <polygon
-          points="312,186 312,214 330,200"
-          fill="var(--pid-accent)"
-          opacity={valveOpacity}
-          stroke="var(--pid-accent)"
-          strokeWidth={1.4}
-        />
-        <polygon
-          points="348,186 348,214 330,200"
-          fill="var(--pid-accent)"
-          opacity={valveOpacity}
-          stroke="var(--pid-accent)"
-          strokeWidth={1.4}
-        />
-        <text x={330} y={236} textAnchor="middle" fontSize={10} fill="var(--pid-muted)">
-          比例阀 {valve.toFixed(0)}%
-        </text>
-      </g>
+      {/* 设备与传感器 */}
+      {lanes.map(({ segment, geom, items }) => {
+        const sensorPositions = items.filter((i) => i.item.kind === "sensor");
+        const gaps = sensorPositions
+          .slice(1)
+          .map((p, i) => Math.abs(p.x - sensorPositions[i].x));
+        const minGap = gaps.length > 0 ? Math.min(...gaps) : Number.POSITIVE_INFINITY;
+        const rows = minGap >= 72 ? 1 : minGap >= 38 ? 2 : 3;
+        let sensorIndex = 0;
 
-      {/* 泵 */}
-      <Pump x={705} y={455} running={pump1?.v === 1} fault={fault1} label="泵 1" />
-      <Pump x={705} y={505} running={pump2?.v === 1} fault={fault2} label="泵 2" />
+        return items.map(({ item, x }) => {
+          if (item.kind === "sensor") {
+            const row = sensorIndex++ % rows;
+            const y = geom.baseY + (geom.side === "below" ? 1 : -1) * 34 * row;
+            return (
+              <Sensor
+                key={item.key}
+                p={item.point}
+                x={x}
+                y={y}
+                pipeY={geom.y}
+                selected={selected}
+                mode={mode}
+                onClick={onSelect}
+              />
+            );
+          }
 
-      {/* 传感器：按 place 自动分布 */}
-      {LANES.map((lane) => {
-        const items = all
-          .filter(
-            (p) =>
-              p.place &&
-              p.place.loop === lane.loop &&
-              p.place.branch === lane.branch,
-          )
-          .sort((a, b) => (a.place!.order - b.place!.order) || a.id.localeCompare(b.id));
+          if (item.kind === "valve") {
+            const position = points.get(item.valve.pos);
+            return (
+              <ValveSymbol
+                key={item.key}
+                x={x}
+                y={geom.y}
+                open={position?.present ? position.v : 0}
+                label={item.valve.label}
+              />
+            );
+          }
 
-        if (items.length === 0) return null;
-        const step = (lane.x2 - lane.x1) / (items.length + 1);
-        const spacing = Math.abs(step);
-        // 密集时交错排布：间距 >=72 单排，>=35 两排，否则三排（卡片宽 70）
-        const rows = spacing >= 72 ? 1 : spacing >= 35 ? 2 : 3;
-
-        const placed = items.map((p, i) => {
-          const x = lane.flow > 0 ? lane.x1 + step * (i + 1) : lane.x2 - step * (i + 1);
-          const row = rows > 1 ? i % rows : 0;
-          const y = lane.baseY + (lane.side === "above" ? -34 : 34) * row;
-          return { p, x, y, row };
+          const offsets = pumpOffsets(item.pumps.length);
+          return item.pumps.map((pump, index) => {
+            const running = points.get(pump.run)?.v === 1;
+            const fault = pump.fault ? points.get(pump.fault)?.v === 1 : false;
+            return (
+              <Pump
+                key={pump.id}
+                x={x}
+                y={geom.y + offsets[index]}
+                running={running}
+                fault={fault}
+                label={pump.label}
+                labelAbove={offsets[index] < 0}
+              />
+            );
+          });
         });
-
-        // 先画远排、再画近排，让近排的卡片盖住远排的引线
-        placed.sort((a, b) => b.row - a.row || a.x - b.x);
-
-        return placed.map(({ p, x, y }) => (
-          <Sensor
-            key={p.id}
-            p={p}
-            x={x}
-            y={y}
-            pipeY={lane.y}
-            selected={selected}
-            mode={mode}
-            onClick={onSelect}
-          />
-        ));
       })}
 
       {/* 图例 */}
@@ -375,7 +631,7 @@ export default function PidDiagram({ points, selected, mode, onSelect }: Props) 
           二次侧
         </text>
         <text x={140} y={4} fontSize={10} fill="var(--pid-dim)">
-          传感器位置由点表 place 自动生成
+          管段、设备与传感器位置由 topology 自动生成
         </text>
       </g>
     </svg>

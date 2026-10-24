@@ -2,10 +2,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Thermometer, Gauge, Waves, Settings, Fan } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { PointSample } from "@/lib/api";
+import type { PointSample, Topology } from "@/lib/api";
+import {
+  flowPoint,
+  pressureOn,
+  pumpsOf,
+  segmentOf,
+  tempOn,
+  valveOf,
+} from "@/lib/topology";
 
 interface Props {
   points: Map<string, PointSample>;
+  topology: Topology;
 }
 
 function num(points: Map<string, PointSample>, id: string) {
@@ -44,19 +53,31 @@ function pumpBadge(p: PointSample | undefined, fault: PointSample | undefined) {
   return <Badge variant="outline">停止</Badge>;
 }
 
-export default function KeyMetrics({ points }: Props) {
-  const t22 = num(points, "T22");
-  const t21 = num(points, "T21");
-  const q2 = num(points, "Q2");
-  const p22 = num(points, "P22");
-  const p21 = num(points, "P21");
-  const valve = num(points, "VALVE_POS");
+export default function KeyMetrics({ points, topology }: Props) {
+  const supplySegment = segmentOf(topology, "secondary", "post_hx");
+  const returnSegment = segmentOf(topology, "secondary", "pre_hx");
+
+  const supply = tempOn(points, supplySegment);
+  const ret = tempOn(points, returnSegment);
+  const flowSegment = supplySegment ?? returnSegment;
+  const flow = flowSegment ? flowPoint(topology, points, flowSegment) : undefined;
+  const supplyPressure = pressureOn(points, supplySegment);
+  const returnPressure = pressureOn(points, returnSegment);
+  const valve = valveOf(topology);
+  const pumps = pumpsOf(topology);
+
+  const t22 = supply ? num(points, supply.id) : Number.NaN;
+  const t21 = ret ? num(points, ret.id) : Number.NaN;
+  const q2 = flow ? num(points, flow.id) : Number.NaN;
+  const p22 = supplyPressure ? num(points, supplyPressure.id) : Number.NaN;
+  const p21 = returnPressure ? num(points, returnPressure.id) : Number.NaN;
+  const valvePos = valve ? num(points, valve.pos) : Number.NaN;
   const dt = Math.max(0, t21 - t22);
   const dp = Math.max(0, p22 - p21);
 
-  const tUnit = points.get("T22")?.unit || "°C";
-  const pUnit = points.get("P22")?.unit || "bar";
-  const qUnit = points.get("Q2")?.unit || "m³/h";
+  const tUnit = supply?.unit || "°C";
+  const pUnit = supplyPressure?.unit || "bar";
+  const qUnit = flow?.unit || "m³/h";
   const dtUnit = tUnit === "°C" ? "K" : tUnit;
 
   const fmt = (v: number, digits = 1) =>
@@ -67,23 +88,54 @@ export default function KeyMetrics({ points }: Props) {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle>关键参数</CardTitle>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Fan className="h-3 w-3" /> 泵 1
-            </span>
-            {pumpBadge(points.get("PUMP1_RUN"), points.get("PUMP1_FAULT"))}
-            <span className="ml-1 flex items-center gap-1">泵 2</span>
-            {pumpBadge(points.get("PUMP2_RUN"), points.get("PUMP2_FAULT"))}
-          </div>
+          {pumps.length > 0 && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {pumps.map((pump) => (
+                <span key={pump.id} className="flex items-center gap-1">
+                  <Fan className="h-3 w-3" />
+                  {pump.label}
+                  {pumpBadge(
+                    points.get(pump.run),
+                    pump.fault ? points.get(pump.fault) : undefined,
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2">
-        <Metric label="二次侧供液 T22" value={fmt(t22, 2)} unit={tUnit} icon={Thermometer} />
-        <Metric label="二次侧回水 T21" value={fmt(t21, 2)} unit={tUnit} icon={Thermometer} />
+        <Metric
+          label={supply ? `二次侧供液 ${supply.id}` : "二次侧供液温度"}
+          value={fmt(t22, 2)}
+          unit={tUnit}
+          icon={Thermometer}
+        />
+        <Metric
+          label={ret ? `二次侧回水 ${ret.id}` : "二次侧回水温度"}
+          value={fmt(t21, 2)}
+          unit={tUnit}
+          icon={Thermometer}
+        />
         <Metric label="供回水温差 ΔT" value={fmt(dt, 2)} unit={dtUnit} icon={Waves} />
-        <Metric label="二次侧流量 Q2" value={fmt(q2, 2)} unit={qUnit} icon={Waves} />
-        <Metric label="泵扬程 P22−P21" value={fmt(dp, 2)} unit={pUnit} icon={Gauge} />
-        <Metric label="比例阀开度" value={fmt(valve, 1)} unit="%" icon={Settings} />
+        <Metric
+          label={flow ? `二次侧流量 ${flow.id}` : "二次侧流量"}
+          value={fmt(q2, 2)}
+          unit={qUnit}
+          icon={Waves}
+        />
+        <Metric
+          label={supplyPressure && returnPressure ? `泵扬程 ${supplyPressure.id}−${returnPressure.id}` : "泵扬程"}
+          value={fmt(dp, 2)}
+          unit={pUnit}
+          icon={Gauge}
+        />
+        <Metric
+          label={valve ? `${valve.label}开度` : "比例阀开度"}
+          value={fmt(valvePos, 1)}
+          unit="%"
+          icon={Settings}
+        />
       </CardContent>
     </Card>
   );

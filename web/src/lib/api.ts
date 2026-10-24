@@ -1,10 +1,13 @@
 export type PointKind = "AI" | "AO" | "DI" | "DO";
 export type SignalKind = "current" | "voltage" | "adc" | "rtd";
+export type LoopSide = "primary" | "secondary";
+export type Branch = "pre_hx" | "post_hx";
+export type Direction = "forward" | "reverse";
 
 export interface Place {
   /** 旧字段：没有 topology 时使用；有 segment 时由后端按管段补全 */
-  loop?: "primary" | "secondary";
-  branch?: "pre_hx" | "post_hx";
+  loop?: LoopSide;
+  branch?: Branch;
   /** topology.segments 中的管段 id */
   segment?: string;
   order: number;
@@ -38,6 +41,58 @@ export interface Snapshot {
   facility_c: number;
   return_c: number;
   ua_kw_per_k: number;
+}
+
+export interface Segment {
+  id: string;
+  label: string;
+  loop: LoopSide;
+  branch: Branch;
+  direction: Direction;
+  /** 该管段的流量测点；同一回路的其他管段复用它 */
+  flow?: string;
+}
+
+export interface HeatExchangerEquipment {
+  type: "heat_exchanger";
+  id: string;
+  label: string;
+}
+
+export interface ValveEquipment {
+  type: "valve";
+  id: string;
+  label: string;
+  segment: string;
+  order: number;
+  cmd: string;
+  pos: string;
+}
+
+export interface PumpEquipment {
+  type: "pump";
+  id: string;
+  label: string;
+  segment: string;
+  order: number;
+  run_cmd: string;
+  run: string;
+  speed_cmd: string;
+  fault?: string;
+}
+
+export type Equipment = HeatExchangerEquipment | ValveEquipment | PumpEquipment;
+
+export interface Topology {
+  segments: Segment[];
+  equipment: Equipment[];
+}
+
+/** 静态拓扑，加载一次即可；点表没配 topology 时返回 null。 */
+export async function fetchTopology(): Promise<Topology | null> {
+  const res = await fetch("/api/topology");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as Topology | null;
 }
 
 export type ConnStatus = "connecting" | "open" | "closed";
