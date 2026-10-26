@@ -21,6 +21,8 @@
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 189 94% 40%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
     --radius: 0.75rem;
 
     /* 系统图配色 */
@@ -63,6 +65,8 @@
     --border: 217 33% 18%;
     --input: 217 33% 18%;
     --ring: 189 94% 43%;
+    --destructive: 0 63% 42%;
+    --destructive-foreground: 0 0% 100%;
 
     --pid-track: #020617;
     --pid-chip: #0f172a;

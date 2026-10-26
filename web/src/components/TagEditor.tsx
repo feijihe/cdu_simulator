@@ -171,7 +171,7 @@ export default function TagEditor({ point, onClose }: Props) {
           </Button>
         </div>
 
-        <div className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 p-4">
           <div>
             <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
               Modbus 地址（保持寄存器 / 线圈）

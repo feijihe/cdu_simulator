@@ -22,6 +22,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Field as FormField,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -33,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import PidDiagram from "@/components/PidDiagram";
 import type {
   ConfigKind,
@@ -81,7 +87,7 @@ const SIGNAL_KINDS: { value: SignalKind; label: string; range: [number, number] 
 function fieldClass(error?: string) {
   return cn(
     "h-7 text-xs",
-    error && "border-red-500/80 focus-visible:ring-red-500/40",
+    error && "border-destructive focus-visible:ring-destructive/40",
   );
 }
 
@@ -97,15 +103,18 @@ function Field({
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0", className)}>
-      <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{label}</Label>
+    <FormField
+      data-invalid={error ? true : undefined}
+      className={cn("min-w-0 gap-1", className)}
+    >
+      <FieldLabel className="text-[10px] font-medium text-muted-foreground">
+        {label}
+      </FieldLabel>
       {children}
       {error && (
-        <div className="mt-0.5 text-[10px] leading-tight text-red-600 dark:text-red-300">
-          {error}
-        </div>
+        <FieldError className="text-[10px] leading-tight">{error}</FieldError>
       )}
-    </div>
+    </FormField>
   );
 }
 
@@ -524,7 +533,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           )}
 
           {draft && tab === "segments" && (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <Section
                 title="管段"
                 hint="每条管段对应系统图上的一个位置：回路 + 板换前/后。最多四条。"
@@ -696,7 +705,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           )}
 
           {draft && tab === "equipment" && (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <Section
                 title="设备"
                 hint="板换固定 1 台；比例阀最多 1 个；水泵 1–2 台。设备引用的点必须是正确方向的可写/只读点。"
@@ -995,8 +1004,8 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           )}
 
           {draft && tab === "tags" && (
-            <div className="grid min-h-[520px] gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="flex min-h-0 flex-col rounded-lg border border-border">
+            <div className="grid h-full gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="flex h-full min-h-0 flex-col rounded-lg border border-border">
                 <div className="border-b border-border p-2">
                   <div className="relative">
                     <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -1004,7 +1013,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder="搜索点位"
-                      className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-2 text-xs outline-none focus:border-primary/60"
+                      className="h-7 pl-7 pr-2 text-xs"
                     />
                   </div>
                   <Button
@@ -1017,7 +1026,8 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     新增点位
                   </Button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto p-1">
+                <ScrollArea type="auto" className="min-h-0 flex-1">
+                  <div className="p-1">
                   {filteredTags.map(({ tag, index }) => {
                     const hasError = Object.keys(errors).some((key) =>
                       key.startsWith(`tag.${index}.`),
@@ -1053,18 +1063,17 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                       </button>
                     );
                   })}
-                </div>
+                  </div>
+                </ScrollArea>
               </div>
 
-              <div
-                data-testid="tag-detail"
-                className="min-w-0 rounded-lg border border-border p-3"
-              >
+              <ScrollArea type="auto" className="h-full min-w-0 rounded-lg border border-border">
+                <div data-testid="tag-detail" className="p-3">
                 {!activeTag && (
                   <div className="text-xs text-muted-foreground">还没有点位，先新增一个。</div>
                 )}
                 {activeTag && (
-                  <div className="space-y-3">
+                  <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm text-foreground">
@@ -1508,7 +1517,8 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     </Section>
                   </div>
                 )}
-              </div>
+                </div>
+              </ScrollArea>
             </div>
           )}
             </div>

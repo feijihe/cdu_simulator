@@ -79,7 +79,7 @@ const SelectContent = React.forwardRef<
             "w-full min-w-[var(--radix-select-trigger-width)]",
         )}
       >
-        {children}
+        <SelectPrimitive.Group>{children}</SelectPrimitive.Group>
       </SelectPrimitive.Viewport>
       <SelectScrollDownButton />
     </SelectPrimitive.Content>
