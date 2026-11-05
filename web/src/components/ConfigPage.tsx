@@ -9,7 +9,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge, Status, Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -128,9 +128,9 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-3">
-      <div className="mb-2 text-[11px] font-medium text-foreground">{title}</div>
-      {hint && <div className="mb-2 text-[10px] text-muted-foreground">{hint}</div>}
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="mb-2 text-[12px] font-medium leading-4 text-foreground">{title}</div>
+      {hint && <div className="mb-2 text-[11px] leading-4 text-muted-foreground">{hint}</div>}
       {children}
     </div>
   );
@@ -428,47 +428,42 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={onBack}>
-          <ArrowLeft className="h-3.5 w-3.5" />
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+        <Button variant="ghost" size="sm" className="text-[11px]" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" />
           返回监控
         </Button>
-        <div>
-          <div className="text-sm font-semibold">配置 CDU</div>
-          <div className="text-[10px] text-muted-foreground">
-            独立配置页 · 系统图随输入实时预览
-          </div>
+        <span className="h-4 w-px bg-border" aria-hidden="true" />
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-[13px] font-semibold leading-none">配置</h1>
+          <span className="font-mono text-[10px] leading-none text-muted-foreground">
+            segments / equipment / tags
+          </span>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+
+        <div className="ml-auto flex items-center gap-3">
           {errorCount === 0 ? (
-            <Badge variant="success">
-              <CheckCircle2 className="h-3 w-3" />
-              校验通过
-            </Badge>
+            <Status tone="ok">校验通过</Status>
           ) : (
-            <Badge variant="danger">
-              <AlertTriangle className="h-3 w-3" />
-              {errorCount} 项错误
-            </Badge>
+            <Status tone="danger">{errorCount} 项错误</Status>
           )}
-          {applied && <Badge variant="success">已应用</Badge>}
+          {applied && <Status tone="ok">已应用</Status>}
+          <span className="h-4 w-px bg-border" aria-hidden="true" />
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-[11px]"
             onClick={handleExport}
             disabled={loading || errorCount > 0 || exporting}
           >
-            <Download className="h-3.5 w-3.5" />
-            {exporting ? "导出中…" : "导出 YAML"}
+            <Download className="h-4 w-4" />
+            {exporting ? "导出中" : "导出 YAML"}
           </Button>
           <Button
             size="sm"
-            className="h-7 text-[11px]"
             onClick={handleSave}
             disabled={loading || errorCount > 0 || saving}
           >
-            {saving ? "应用中…" : errorCount > 0 ? `请先修正 ${errorCount} 项` : "应用配置"}
+            {saving ? "应用中" : errorCount > 0 ? `先修正 ${errorCount} 项` : "应用配置"}
           </Button>
         </div>
       </header>
@@ -478,8 +473,8 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           className={cn(
             "border-b px-4 py-1.5 text-[11px]",
             saveError
-              ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+              ? "border-danger/30 bg-danger/10 text-danger"
+              : "border-ok/30 bg-ok/10 text-ok",
           )}
         >
           {saveError ? `操作失败：${saveError}` : notice}
@@ -498,7 +493,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
               key={value}
               onClick={() => setTab(value)}
               className={cn(
-                "border-b-2 px-3 py-2 text-[11px] transition-colors",
+                "border-b-2 px-3 py-2 text-[12px] transition-colors",
                 tab === value
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",
@@ -513,7 +508,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                   : value === "equipment"
                     ? key.startsWith("equipment.")
                     : key.startsWith("tag.") || key === "tags",
-              ) && <span className="ml-1 text-red-500">!</span>}
+              ) && <span className="ml-1 text-danger">!</span>}
             </button>
           ))}
         </div>
@@ -527,7 +522,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
             <div className="h-full overflow-auto p-4">
           {loading && <div className="text-xs text-muted-foreground">加载配置中…</div>}
           {loadError && (
-            <div className="rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-300">
+            <div className="rounded border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
               加载配置失败：{loadError}
             </div>
           )}
@@ -539,7 +534,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                 hint="每条管段对应系统图上的一个位置：回路 + 板换前/后。最多四条。"
               >
                 {errors["topology.segments"] && (
-                  <div className="mb-2 text-[10px] text-red-600 dark:text-red-300">
+                  <div className="mb-2 text-[10px] text-danger">
                     {errors["topology.segments"]}
                   </div>
                 )}
@@ -555,11 +550,11 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-red-500"
+                            className="h-6 w-6 text-muted-foreground hover:text-danger"
                             onClick={() => removeSegment(index)}
                             title="删除管段"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -688,7 +683,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     disabled={topology.segments.length >= 4}
                     onClick={addSegment}
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-4 w-4" />
                     新增管段
                   </Button>
                   <Button
@@ -711,7 +706,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                 hint="板换固定 1 台；比例阀最多 1 个；水泵 1–2 台。设备引用的点必须是正确方向的可写/只读点。"
               >
                 {errors["equipment.counts"] && (
-                  <div className="mb-2 text-[10px] text-red-600 dark:text-red-300">
+                  <div className="mb-2 text-[10px] text-danger">
                     {errors["equipment.counts"]}
                   </div>
                 )}
@@ -728,17 +723,16 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                                 : item.type === "valve"
                                   ? "比例阀"
                                   : "水泵"}
-                            </Badge>
-                            <span className="font-mono text-xs text-foreground">{item.id}</span>
+                            </Badge>                            <span className="font-mono text-xs text-foreground">{item.id}</span>
                           </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-red-500"
+                            className="h-6 w-6 text-muted-foreground hover:text-danger"
                             onClick={() => removeEquipment(index)}
                             title="删除设备"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -975,7 +969,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     disabled={topology.equipment.some((item) => item.type === "heat_exchanger")}
                     onClick={addHeatExchanger}
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-4 w-4" />
                     添加板换
                   </Button>
                   <Button
@@ -985,7 +979,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     disabled={topology.equipment.some((item) => item.type === "valve")}
                     onClick={addValve}
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-4 w-4" />
                     添加比例阀
                   </Button>
                   <Button
@@ -995,7 +989,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     disabled={topology.equipment.filter((item) => item.type === "pump").length >= 2}
                     onClick={addPump}
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-4 w-4" />
                     添加水泵
                   </Button>
                 </div>
@@ -1008,7 +1002,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
               <div className="flex h-full min-h-0 flex-col rounded-lg border border-border">
                 <div className="border-b border-border p-2">
                   <div className="relative">
-                    <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Search className="absolute left-2 top-1.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
@@ -1022,7 +1016,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                     className="mt-2 h-7 w-full text-[11px]"
                     onClick={addTag}
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-4 w-4" />
                     新增点位
                   </Button>
                 </div>
@@ -1037,16 +1031,16 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                         key={index}
                         onClick={() => setSelectedTag(index)}
                         className={cn(
-                          "mb-1 flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                          "mb-1 flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors",
                           activeTagIndex === index
-                            ? "bg-primary/10"
-                            : "hover:bg-accent",
+                            ? "bg-muted shadow-[inset_2px_0_0_hsl(var(--primary))]"
+                            : "hover:bg-muted/60",
                         )}
                       >
                         <span
                           className={cn(
                             "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
-                            hasError ? "bg-red-500" : "bg-emerald-500",
+                            hasError ? "bg-danger" : "bg-ok",
                           )}
                         />
                         <span className="min-w-0 flex-1">
@@ -1057,9 +1051,9 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                             {tag.desc || "无描述"}
                           </span>
                         </span>
-                        <Badge variant="outline" className="shrink-0">
+                        <Tag className="shrink-0">
                           {KIND_LABEL[tag.kind]}
-                        </Badge>
+                        </Tag>
                       </button>
                     );
                   })}
@@ -1079,18 +1073,18 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                         <span className="font-mono text-sm text-foreground">
                           {activeTag.id || "(未命名)"}
                         </span>
-                        <Badge variant="outline">{KIND_LABEL[activeTag.kind]}</Badge>
+                        <Tag>{KIND_LABEL[activeTag.kind]}</Tag>
                         {Object.keys(errors).some((key) =>
                           key.startsWith(`tag.${activeTagIndex}.`),
-                        ) && <Badge variant="danger">有错误</Badge>}
+                        ) && <Status tone="danger">有错误</Status>}
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-[11px] text-red-600 hover:text-red-500 dark:text-red-300"
+                        className="h-7 text-[11px] text-danger hover:text-danger/80"
                         onClick={() => removeTag(activeTagIndex)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                         删除
                       </Button>
                     </div>
@@ -1239,7 +1233,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
                             error={errors[`tag.${activeTagIndex}.present`]}
                             className="col-span-2"
                           >
-                            <span className="text-[10px] text-red-500">presence=absent 不能标记在位</span>
+                            <span className="text-[10px] text-danger">presence=absent 不能标记在位</span>
                           </Field>
                         )}
                       </div>
@@ -1527,18 +1521,17 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           <ResizableHandle withHandle />
 
           <ResizablePanel defaultSize={48} minSize={20}>
-            <div className="flex h-full flex-col bg-card/40">
-              <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[11px] text-muted-foreground">
-                <span className="font-medium text-foreground">系统图预览</span>
-                <Badge variant="outline">实时</Badge>
-                <span className="text-[10px]">已选管段的传感器，数值以 — 占位</span>
+            <div className="flex h-full flex-col bg-card/60">
+              <div className="flex h-9 items-center gap-3 border-b border-border px-4 text-[11px] text-muted-foreground">
+                <span className="text-[12px] font-medium text-foreground">系统图预览</span>
+                <span className="text-[10px]">选中管段的传感器，数值显示为 —</span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-auto h-6 px-2 text-[10px]"
+                  className="ml-auto text-[11px]"
                   onClick={() => setFullscreen(true)}
                 >
-                  <Maximize2 className="h-3.5 w-3.5" />
+                  <Maximize2 className="h-4 w-4" />
                   全屏
                 </Button>
               </div>
@@ -1560,7 +1553,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
         <Dialog open={fullscreen} onOpenChange={setFullscreen}>
           <DialogContent className="flex h-screen max-h-none w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0">
             <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-2">
-              <DialogTitle className="text-sm">系统图预览</DialogTitle>
+              <DialogTitle className="text-[13px]">系统图预览</DialogTitle>
               <DialogDescription className="sr-only">
                 全屏查看当前配置的系统图布局
               </DialogDescription>

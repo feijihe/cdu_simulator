@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Status, type Tone } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import type { Boundary, PointSample, Topology } from "@/lib/api";
 import { clearBoundary, putBoundary, putPoint } from "@/lib/api";
 import { pumpsOf, segmentOf, tempOn, valveOf } from "@/lib/topology";
+import { cn } from "@/lib/utils";
 
 interface Props {
   points: Map<string, PointSample>;
@@ -34,7 +35,7 @@ function CommandSlider({
   useEffect(() => setLocal(value), [value]);
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       <Slider
         value={[local]}
         max={100}
@@ -42,7 +43,7 @@ function CommandSlider({
         onValueChange={(next) => setLocal(next[0])}
         onValueCommit={(next) => onCommit(next[0])}
       />
-      <span className="w-9 shrink-0 text-right font-mono text-[11px] text-foreground">
+      <span className="w-9 shrink-0 text-right font-mono text-[11px] tabular-nums text-foreground">
         {local.toFixed(0)}%
       </span>
     </div>
@@ -70,10 +71,11 @@ function BoundarySlider({
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="truncate">{label}</span>
-        <span className="shrink-0 font-mono text-foreground">
-          {value.toFixed(1)} <span className="text-[10px] text-muted-foreground">{unit}</span>
+      <div className="flex items-baseline justify-between gap-2 text-[11px]">
+        <span className="truncate text-muted-foreground">{label}</span>
+        <span className="shrink-0 font-mono tabular-nums text-foreground">
+          {value.toFixed(1)}
+          <span className="ml-1 text-[10px] text-muted-foreground">{unit}</span>
         </span>
       </div>
       <Slider
@@ -159,138 +161,143 @@ export default function ControlPanel({
 
   const valveCmd = valve ? num(points, valve.cmd) : 0;
   const valvePos = valve ? num(points, valve.pos) : 0;
+  const overridden =
+    boundary?.facility_c != null || boundary?.return_c != null || boundary?.ua_kw_per_k != null;
 
   return (
-    <div className="mb-2 grid grid-cols-1 gap-3 rounded-lg border border-border bg-card/60 px-3 py-2 md:grid-cols-3">
-      {valve ? (
+    <div className="shrink-0 border-b border-border">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 px-4 pb-1 pt-3 md:grid-cols-3">
         <div>
-          <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>{valve.label}</span>
-            <span className="font-mono text-muted-foreground">实际 {valvePos.toFixed(1)}%</span>
-          </div>
-          <CommandSlider
-            value={valveCmd}
-            onCommit={(v) => send(valve.cmd, { value: v })}
-          />
-        </div>
-      ) : (
-        <div className="flex items-center text-[11px] text-muted-foreground">
-          点表未在 topology 中配置比例阀
-        </div>
-      )}
-
-      {pumps.map((pump) => {
-        const runCmd = points.get(pump.run_cmd)?.v === 1;
-        const runFb = points.get(pump.run)?.v === 1;
-        const fault = pump.fault ? points.get(pump.fault)?.v === 1 : false;
-        return (
-          <div key={pump.id} className="md:border-l md:border-border md:pl-4">
-            <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                {pump.label}
-                <Badge variant={fault ? "danger" : runFb ? "success" : "outline"}>
-                  {fault ? "故障" : runFb ? "运行" : "停止"}
-                </Badge>
+          <div className="flex items-baseline justify-between gap-2 text-[11px]">
+            <span className="text-muted-foreground">
+              {valve ? valve.label : "比例阀"}
+            </span>
+            {valve ? (
+              <span className="font-mono tabular-nums text-muted-foreground">
+                反馈 {valvePos.toFixed(0)}%
               </span>
-              <Button
-                size="sm"
-                variant={runCmd ? "secondary" : "outline"}
-                className="h-5 px-2 text-[10px]"
-                onClick={() => send(pump.run_cmd, { on: !runCmd })}
-              >
-                {runCmd ? "停止" : "启动"}
-              </Button>
-            </div>
-            <CommandSlider
-              value={num(points, pump.speed_cmd)}
-              onCommit={(v) => send(pump.speed_cmd, { value: v })}
-            />
+            ) : (
+              <span className="text-[10px] text-muted-foreground">未配置</span>
+            )}
           </div>
-        );
-      })}
+          {valve ? (
+            <CommandSlider value={valveCmd} onCommit={(v) => send(valve.cmd, { value: v })} />
+          ) : (
+            <p className="py-2 text-[10px] text-muted-foreground">
+              在 topology 中配置比例阀后可在这里控制
+            </p>
+          )}
+        </div>
 
-      <div className="col-span-full border-t border-border pt-2">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        {pumps.map((pump, index) => {
+          const runCmd = points.get(pump.run_cmd)?.v === 1;
+          const runFb = points.get(pump.run)?.v === 1;
+          const fault = pump.fault ? points.get(pump.fault)?.v === 1 : false;
+          const tone: Tone = fault ? "danger" : runFb ? "ok" : "neutral";
+          return (
+            <div
+              key={pump.id}
+              className={cn(index >= 0 && "md:border-l md:border-border md:pl-6")}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">{pump.label}</span>
+                  <Status tone={tone}>{fault ? "故障" : runFb ? "运行" : "停止"}</Status>
+                </span>
+                <Button
+                  size="sm"
+                  variant={runCmd ? "secondary" : "outline"}
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => send(pump.run_cmd, { on: !runCmd })}
+                >
+                  {runCmd ? "停止" : "启动"}
+                </Button>
+              </div>
+              <CommandSlider
+                value={num(points, pump.speed_cmd)}
+                onCommit={(v) => send(pump.speed_cmd, { value: v })}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[11px]">
+        <button
+          type="button"
+          onClick={() => setBoundaryOpen((open) => !open)}
+          aria-expanded={boundaryOpen}
+          className="flex items-center gap-1 rounded-[4px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <ChevronRight
+            className={cn(
+              "h-4 w-4 transition-transform duration-150",
+              boundaryOpen && "rotate-90",
+            )}
+          />
+          边界条件
+        </button>
+        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+          进水 {t11Target.toFixed(1)} °C · 回水 {t21Target.toFixed(1)} °C · UA{" "}
+          {uaTarget.toFixed(1)} kW/K
+        </span>
+        {overridden && <span className="text-[10px] text-warn">手动</span>}
+        {overridden && (
           <button
             type="button"
-            onClick={() => setBoundaryOpen((open) => !open)}
-            aria-expanded={boundaryOpen}
-            className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent hover:text-foreground"
-          >
-            <ChevronRight
-              className={`h-3.5 w-3.5 transition-transform ${boundaryOpen ? "rotate-90" : ""}`}
-            />
-            边界条件
-            <span className="text-[10px] text-muted-foreground/70">
-              {boundaryOpen ? "收起" : "展开"}
-            </span>
-          </button>
-          <span className="font-mono text-[10px] text-muted-foreground/90">
-            进水 {t11Target.toFixed(1)} °C · 回水 {t21Target.toFixed(1)} °C · UA{" "}
-            {uaTarget.toFixed(1)} kW/K
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px]"
             onClick={resetBoundary}
+            className="ml-auto rounded-[4px] text-[10px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            自动
-          </Button>
-          {boundary?.facility_c != null && <Badge variant="warning">进水 手动</Badge>}
-          {boundary?.return_c != null && <Badge variant="warning">回水 手动</Badge>}
-          {boundary?.ua_kw_per_k != null && <Badge variant="warning">UA 手动</Badge>}
-          <span className="ml-auto text-[10px] text-muted-foreground/80">
-            设定的是物理边界，传感器读数随之变化
-          </span>
-        </div>
-
-        {boundaryOpen && (
-          <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <BoundarySlider
-              label={`${primarySegment?.label ?? "一次侧进水"}${primaryTag ? ` · ${primaryTag.id}` : "（未配置测点）"}`}
-              value={t11}
-              min={0}
-              max={60}
-              step={0.5}
-              unit="°C"
-              onChange={(v) => {
-                setEditing("t11");
-                setT11(v);
-              }}
-              onCommit={(v) => commitBoundary("facility_c", v)}
-            />
-            <BoundarySlider
-              label={`${returnSegment?.label ?? "二次侧回水"}${returnTag ? ` · ${returnTag.id}` : "（未配置测点）"}`}
-              value={t21}
-              min={10}
-              max={70}
-              step={0.5}
-              unit="°C"
-              onChange={(v) => {
-                setEditing("t21");
-                setT21(v);
-              }}
-              onCommit={(v) => commitBoundary("return_c", v)}
-            />
-            <BoundarySlider
-              label="板换 UA"
-              value={uaValue}
-              min={1}
-              max={200}
-              step={1}
-              unit="kW/K"
-              onChange={(v) => {
-                setEditing("ua");
-                setUaValue(v);
-              }}
-              onCommit={(v) => commitBoundary("ua_kw_per_k", v)}
-            />
-          </div>
+            恢复自动
+          </button>
         )}
       </div>
 
-      {error && <div className="col-span-full text-[10px] text-red-600 dark:text-red-300">{error}</div>}
+      {boundaryOpen && (
+        <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-3 md:grid-cols-3">
+          <BoundarySlider
+            label={`${primarySegment?.label ?? "一次侧进水"}${primaryTag ? ` · ${primaryTag.id}` : ""}`}
+            value={t11}
+            min={0}
+            max={60}
+            step={0.5}
+            unit="°C"
+            onChange={(v) => {
+              setEditing("t11");
+              setT11(v);
+            }}
+            onCommit={(v) => commitBoundary("facility_c", v)}
+          />
+          <BoundarySlider
+            label={`${returnSegment?.label ?? "二次侧回水"}${returnTag ? ` · ${returnTag.id}` : ""}`}
+            value={t21}
+            min={10}
+            max={70}
+            step={0.5}
+            unit="°C"
+            onChange={(v) => {
+              setEditing("t21");
+              setT21(v);
+            }}
+            onCommit={(v) => commitBoundary("return_c", v)}
+          />
+          <BoundarySlider
+            label="板换 UA"
+            value={uaValue}
+            min={1}
+            max={200}
+            step={1}
+            unit="kW/K"
+            onChange={(v) => {
+              setEditing("ua");
+              setUaValue(v);
+            }}
+            onCommit={(v) => commitBoundary("ua_kw_per_k", v)}
+          />
+        </div>
+      )}
+
+      {error && <div className="px-4 pb-2 text-[11px] text-danger">{error}</div>}
     </div>
   );
 }

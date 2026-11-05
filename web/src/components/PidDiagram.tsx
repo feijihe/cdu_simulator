@@ -77,15 +77,15 @@ function pipeColor(loop: "primary" | "secondary") {
   return loop === "primary" ? "var(--pipe-primary)" : "var(--pipe-secondary)";
 }
 
-/** 系统图传感器图标：按工程量类型区分，不依赖具体位号。 */
-function sensorIcon(point: PointSample): { Icon: LucideIcon; color: string } {
+/** 系统图传感器图标：按工程量类型区分形状，颜色只用中性的仪表灰。 */
+function sensorIcon(point: PointSample): LucideIcon {
   const unit = point.unit.trim().toLowerCase();
-  if (isTempUnit(unit)) return { Icon: Thermometer, color: "#f59e0b" };
-  if (isPressureUnit(unit)) return { Icon: Gauge, color: "#8b5cf6" };
-  if (isFlowUnit(unit)) return { Icon: Waves, color: "#06b6d4" };
-  if (unit === "ph") return { Icon: FlaskConical, color: "#10b981" };
-  if (unit === "%") return { Icon: Ruler, color: "#eab308" };
-  return { Icon: Activity, color: "var(--pid-muted)" };
+  if (isTempUnit(unit)) return Thermometer;
+  if (isPressureUnit(unit)) return Gauge;
+  if (isFlowUnit(unit)) return Waves;
+  if (unit === "ph") return FlaskConical;
+  if (unit === "%") return Ruler;
+  return Activity;
 }
 
 function hxEdge(segment: Segment) {
@@ -95,7 +95,6 @@ function hxEdge(segment: Segment) {
 
 /**
  * 流动动画由 rAF 直接改 stroke-dashoffset，与 WebSocket 的 5 Hz 刷新解耦。
- * 之前的做法是每次快照都改 CSS animation-duration，流速一抖动画就被重置，看起来卡。
  */
 function useFlowDriver() {
   const handles = useRef<Map<string, FlowHandle>>(new Map());
@@ -110,7 +109,6 @@ function useFlowDriver() {
 
       handles.current.forEach((h) => {
         if (!h.el) return;
-        // 速度平滑过渡，避免流量变化时动画突然变速
         h.speed += (h.target - h.speed) * Math.min(1, dt * 8);
 
         if (h.target <= 0.01 && h.speed < 0.05) {
@@ -152,13 +150,12 @@ function Pipe({
 
   return (
     <g>
-      <path d={d} fill="none" stroke="var(--pid-track)" strokeWidth={11} strokeLinecap="round" opacity={0.9} />
-      <path d={d} fill="none" stroke={color} strokeWidth={5} strokeLinecap="round" opacity={0.7} />
+      <path d={d} fill="none" stroke="var(--pid-track)" strokeWidth={10} strokeLinecap="round" />
+      <path d={d} fill="none" stroke={color} strokeWidth={4.5} strokeLinecap="round" opacity={0.85} />
       <path
         ref={(el) => {
           const map = handles.current;
           if (!map) return;
-          // ref 回调每次渲染都会 detach/attach，这里保留 offset，避免动画被重置
           const handle = map.get(id) ?? { el: null, speed: 0, target: 0, offset: 0 };
           handle.el = el;
           handle.target = speed;
@@ -167,10 +164,10 @@ function Pipe({
         d={d}
         fill="none"
         stroke="var(--flow-dash)"
-        strokeWidth={2}
+        strokeWidth={1.5}
         strokeLinecap="round"
-        strokeDasharray="5 17"
-        opacity={moving ? 0.85 : 0}
+        strokeDasharray="4 18"
+        opacity={moving ? 0.8 : 0}
       />
     </g>
   );
@@ -200,43 +197,43 @@ function Sensor({
   const below = pipeY > y;
   const start = below ? 8 : -24;
   const end = pipeY - y;
-  const { Icon, color } = sensorIcon(p);
+  const Icon = sensorIcon(p);
 
   return (
     <g
       transform={`translate(${x},${y})`}
-      opacity={present ? 1 : 0.4}
+      opacity={present ? 1 : 0.45}
       style={{ cursor: "pointer" }}
       onClick={() => onClick(p.id)}
     >
-      <line x1={0} y1={start} x2={0} y2={end} stroke="var(--pid-border)" strokeWidth={1.4} />
+      <line x1={0} y1={start} x2={0} y2={end} stroke="var(--pid-border)" strokeWidth={1.2} />
       <rect
         x={-35}
         y={-24}
         width={70}
         height={32}
-        rx={7}
+        rx={4}
         fill={active ? "var(--pid-chip-active)" : "var(--pid-chip)"}
         stroke={active ? "var(--pid-accent)" : "var(--pid-border)"}
-        strokeWidth={active ? 1.8 : 1}
+        strokeWidth={1}
       />
-      <text x={-29} y={-11} fontSize={9} fill="var(--pid-muted)" fontFamily="ui-monospace, monospace">
+      <text x={-29} y={-12} fontSize={10} fill="var(--pid-muted)" fontFamily="ui-monospace, monospace">
         {p.id}
       </text>
-      <g transform="translate(15,-22)" aria-hidden="true">
-        <Icon size={12} strokeWidth={1.8} color={color} />
+      <g transform="translate(15,-23)" aria-hidden="true">
+        <Icon size={12} strokeWidth={1.5} color="var(--pid-muted)" />
       </g>
       <text
         x={-29}
         y={3}
         fontSize={12}
-        fontWeight={600}
+        fontWeight={500}
         fill={active ? "var(--pid-active-text)" : "var(--pid-text)"}
         fontFamily="ui-monospace, monospace"
       >
         {preview ? "—" : present ? displayValue(p, mode) : "—"}
       </text>
-      <text x={29} y={3} fontSize={8} fill="var(--pid-dim)" textAnchor="end">
+      <text x={29} y={3} fontSize={10} fill="var(--pid-dim)" textAnchor="end">
         {preview ? p.unit : present ? unitFor(p, mode) : ""}
       </text>
     </g>
@@ -256,10 +253,10 @@ function ValveSymbol({
   label: string;
   preview?: boolean;
 }) {
-  const opacity = 0.15 + 0.85 * Math.min(1, Math.max(0, open / 100));
+  const opacity = 0.12 + 0.88 * Math.min(1, Math.max(0, open / 100));
   return (
     <g>
-      <line x1={x} y1={y - 12} x2={x} y2={y - 28} stroke="var(--pid-muted)" strokeWidth={2} />
+      <line x1={x} y1={y - 12} x2={x} y2={y - 28} stroke="var(--pid-muted)" strokeWidth={1.5} />
       <rect
         x={x - 10}
         y={y - 38}
@@ -268,21 +265,21 @@ function ValveSymbol({
         rx={2}
         fill="var(--pid-actuator)"
         stroke="var(--pid-muted)"
-        strokeWidth={1.2}
+        strokeWidth={1}
       />
       <polygon
         points={`${x - 18},${y - 14} ${x - 18},${y + 14} ${x},${y}`}
         fill="var(--pid-accent)"
         opacity={opacity}
         stroke="var(--pid-accent)"
-        strokeWidth={1.4}
+        strokeWidth={1.2}
       />
       <polygon
         points={`${x + 18},${y - 14} ${x + 18},${y + 14} ${x},${y}`}
         fill="var(--pid-accent)"
         opacity={opacity}
         stroke="var(--pid-accent)"
-        strokeWidth={1.4}
+        strokeWidth={1.2}
       />
       <text x={x} y={y + 30} textAnchor="middle" fontSize={10} fill="var(--pid-muted)">
         {label}
@@ -310,22 +307,36 @@ function Pump({
   const color = fault ? "var(--danger)" : running ? "var(--ok)" : "var(--pid-dim)";
   return (
     <g>
-      <circle cx={x} cy={y} r={15} fill="var(--pid-chip)" stroke={color} strokeWidth={2.5} />
+      <circle cx={x} cy={y} r={15} fill="var(--pid-chip)" stroke={color} strokeWidth={2} />
       <g
         style={{
           transformBox: "fill-box",
           transformOrigin: "center",
-          animation: running ? "rot 1.8s linear infinite" : undefined,
+          animation: running ? "rot 2.4s linear infinite" : undefined,
         }}
       >
-        <line x1={x - 9} y1={y} x2={x + 9} y2={y} stroke={running ? "var(--ok-soft)" : "var(--pid-dim)"} strokeWidth={2} />
-        <line x1={x} y1={y - 9} x2={x} y2={y + 9} stroke={running ? "var(--ok-soft)" : "var(--pid-dim)"} strokeWidth={2} />
+        <line
+          x1={x - 9}
+          y1={y}
+          x2={x + 9}
+          y2={y}
+          stroke={running ? "var(--ok)" : "var(--pid-dim)"}
+          strokeWidth={1.5}
+        />
+        <line
+          x1={x}
+          y1={y - 9}
+          x2={x}
+          y2={y + 9}
+          stroke={running ? "var(--ok)" : "var(--pid-dim)"}
+          strokeWidth={1.5}
+        />
       </g>
       <text
         x={x}
         y={y + (labelAbove ? -22 : 30)}
         textAnchor="middle"
-        fontSize={9}
+        fontSize={10}
         fill="var(--pid-muted)"
       >
         {label}
@@ -333,12 +344,12 @@ function Pump({
       {fault && (
         <text
           x={x}
-          y={y + (labelAbove ? 30 : -21)}
+          y={y + (labelAbove ? 30 : -20)}
           textAnchor="middle"
-          fontSize={8}
+          fontSize={10}
           fill="var(--danger)"
         >
-          FAULT
+          故障
         </text>
       )}
     </g>
@@ -489,7 +500,7 @@ export default function PidDiagram({
 
   if (topology.segments.length === 0) {
     return (
-      <div className="flex h-72 items-center justify-center text-xs text-muted-foreground">
+      <div className="flex h-72 items-center justify-center text-[11px] text-muted-foreground">
         点表里没有可绘制的位置：请给传感器加 place，或在 topology 中定义 segments
       </div>
     );
@@ -499,7 +510,6 @@ export default function PidDiagram({
     const geom = GEOM[`${segment.loop}:${segment.branch}`];
     if (!geom) return [];
     const items = placeItems(buildItems(segment, points, topology), segment, geom);
-    // 单泵直接串在主管上；多泵才需要把主管断开画并联支路
     const pumpXs = items
       .filter((i) => i.item.kind === "pumps" && i.item.pumps.length > 1)
       .map((i) => i.x);
@@ -519,21 +529,6 @@ export default function PidDiagram({
       role="img"
       aria-label={preview ? "CDU 系统图预览" : "CDU 系统图"}
     >
-      <defs>
-        <linearGradient id="hx-grad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="var(--hx-a)" />
-          <stop offset="55%" stopColor="var(--hx-mid)" />
-          <stop offset="100%" stopColor="var(--hx-b)" />
-        </linearGradient>
-      </defs>
-
-      <text x={30} y={40} fontSize={13} fontWeight={600} fill="var(--pipe-primary)">
-        一次侧
-      </text>
-      <text x={1010} y={40} fontSize={13} fontWeight={600} fill="var(--pipe-secondary)" textAnchor="end">
-        二次侧
-      </text>
-
       {/* 主管段 */}
       {lanes.map(({ segment, paths, flow }) =>
         paths.map((d, i) => (
@@ -552,7 +547,6 @@ export default function PidDiagram({
       {lanes.map(({ segment, items, flow }) =>
         items.map(({ item, x }) => {
           if (item.kind !== "pumps") return null;
-          // 单泵直接串在主管上，不画并联支路
           if (item.pumps.length <= 1) return null;
           const offsets = pumpOffsets(item.pumps.length);
           const running = item.pumps.filter((p) => points.get(p.run)?.v === 1).length;
@@ -574,30 +568,41 @@ export default function PidDiagram({
         }),
       )}
 
-      {/* 板换 */}
+      {/* 板换：板片剖面 */}
       <rect
         x={HX.x}
         y={HX.y}
         width={HX.w}
         height={HX.h}
-        rx={8}
-        fill="url(#hx-grad)"
+        rx={4}
+        fill="var(--pid-chip)"
         stroke="var(--pid-border)"
-        strokeWidth={1.5}
+        strokeWidth={1.2}
       />
+      {[466, 477, 488, 499, 510, 521, 532, 543].map((x) => (
+        <line
+          key={x}
+          x1={x}
+          y1={HX.y + 8}
+          x2={x}
+          y2={HX.y + HX.h - 8}
+          stroke="var(--pid-border)"
+          strokeWidth={1}
+        />
+      ))}
       <polyline
         points="466,388 493,368 466,348 493,328 466,308 493,288 466,268"
         fill="none"
         stroke="var(--pipe-primary)"
-        strokeWidth={1.8}
-        opacity={0.55}
+        strokeWidth={1.4}
+        opacity={0.4}
       />
       <polyline
         points="544,388 517,368 544,348 517,328 544,308 517,288 544,268"
         fill="none"
         stroke="var(--pipe-secondary)"
-        strokeWidth={1.8}
-        opacity={0.55}
+        strokeWidth={1.4}
+        opacity={0.4}
       />
       <line x1={505} y1={258} x2={505} y2={392} stroke="var(--pid-border)" strokeDasharray="3 4" />
       <rect
@@ -607,8 +612,9 @@ export default function PidDiagram({
         height={18}
         rx={4}
         fill="var(--pid-chip)"
+        stroke="var(--pid-border)"
       />
-      <text x={505} y={425} textAnchor="middle" fontSize={11} fill="var(--pid-muted)">
+      <text x={505} y={425} textAnchor="middle" fontSize={10} fill="var(--pid-muted)">
         {hxLabel}
       </text>
 
@@ -675,17 +681,22 @@ export default function PidDiagram({
       })}
 
       {/* 图例 */}
-      <g transform="translate(30, 620)">
-        <circle cx={0} cy={0} r={4} fill="var(--pipe-primary)" />
-        <text x={10} y={4} fontSize={10} fill="var(--pid-dim)">
+      <g transform="translate(38, 612)" fontSize={10} fill="var(--pid-dim)">
+        <line x1={0} y1={-4} x2={16} y2={-4} stroke="var(--pipe-primary)" strokeWidth={2.5} />
+        <text x={22} y={0}>
           一次侧
         </text>
-        <circle cx={70} cy={0} r={4} fill="var(--pipe-secondary)" />
-        <text x={80} y={4} fontSize={10} fill="var(--pid-dim)">
+        <line x1={86} y1={-4} x2={102} y2={-4} stroke="var(--pipe-secondary)" strokeWidth={2.5} />
+        <text x={108} y={0}>
           二次侧
         </text>
-        <text x={140} y={4} fontSize={10} fill="var(--pid-dim)">
-          管段、设备与传感器位置由 topology 自动生成
+        <circle cx={172} cy={-4} r={3.5} fill="var(--ok)" />
+        <text x={182} y={0}>
+          运行
+        </text>
+        <circle cx={228} cy={-4} r={3.5} fill="var(--danger)" />
+        <text x={238} y={0}>
+          故障
         </text>
       </g>
     </svg>

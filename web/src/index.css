@@ -2,91 +2,97 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * 仪表盘中性色阶：偏冷的墨色（ink），饱和度压在 26% 以内，
+ * 背景永远是灰的，颜色只出现在管线、选中状态和异常上。
+ */
 @layer base {
   :root {
     color-scheme: light;
 
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    --background: 210 24% 98%;
+    --foreground: 215 24% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 189 94% 40%;
+    --card-foreground: 215 24% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 24% 12%;
+    --muted: 212 22% 95%;
+    --muted-foreground: 215 12% 42%;
+    --secondary: 212 20% 93%;
+    --secondary-foreground: 215 24% 14%;
+    --accent: 212 22% 94%;
+    --accent-foreground: 215 24% 14%;
+    --border: 214 18% 88%;
+    --input: 214 18% 84%;
+    --ring: 192 66% 34%;
+    --primary: 192 70% 28%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 189 94% 40%;
-    --destructive: 0 84% 60%;
+    --destructive: 4 68% 42%;
     --destructive-foreground: 0 0% 100%;
+
+    /* 语义色，只在有含义的地方出现 */
+    --ok: 158 60% 28%;
+    --warn: 36 88% 30%;
+    --danger: 4 68% 42%;
+
     --radius: 0.75rem;
 
     /* 系统图配色 */
-    --pid-track: #f1f5f9;
+    --pid-track: #e6ebf1;
     --pid-chip: #ffffff;
-    --pid-chip-active: #e0f2fe;
-    --pid-border: #cbd5e1;
-    --pid-text: #0f172a;
-    --pid-active-text: #0e7490;
-    --pid-muted: #475569;
-    --pid-dim: #64748b;
-    --pid-accent: #0891b2;
-    --pid-actuator: #e2e8f0;
-    --pipe-primary: #0284c7;
-    --pipe-secondary: #ea580c;
-    --flow-dash: #0f172a;
-    --ok: #059669;
-    --ok-soft: #10b981;
-    --danger: #dc2626;
-    --hx-a: #e0f2fe;
-    --hx-mid: #f8fafc;
-    --hx-b: #ffedd5;
+    --pid-chip-active: #f2f6f9;
+    --pid-border: #d5dce5;
+    --pid-text: #16202b;
+    --pid-active-text: #115368;
+    --pid-muted: #5a6675;
+    --pid-dim: #66707e;
+    --pid-accent: hsl(var(--primary));
+    --pid-actuator: #eef2f6;
+    --pipe-primary: #2f6f9e;
+    --pipe-secondary: #a85a26;
+    --flow-dash: #ffffff;
   }
 
   .dark {
     color-scheme: dark;
 
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 40% 9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 189 94% 43%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 14%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-    --border: 217 33% 18%;
-    --input: 217 33% 18%;
-    --ring: 189 94% 43%;
-    --destructive: 0 63% 42%;
-    --destructive-foreground: 0 0% 100%;
+    --background: 214 26% 7%;
+    --foreground: 210 20% 94%;
+    --card: 214 22% 10%;
+    --card-foreground: 210 20% 94%;
+    --popover: 214 22% 10%;
+    --popover-foreground: 210 20% 94%;
+    --muted: 214 18% 14%;
+    --muted-foreground: 214 10% 62%;
+    --secondary: 214 18% 16%;
+    --secondary-foreground: 210 20% 94%;
+    --accent: 214 18% 16%;
+    --accent-foreground: 210 20% 94%;
+    --border: 214 16% 20%;
+    --input: 214 16% 24%;
+    --ring: 187 70% 60%;
+    --primary: 187 72% 62%;
+    --primary-foreground: 214 40% 8%;
+    --destructive: 6 76% 62%;
+    --destructive-foreground: 214 40% 8%;
 
-    --pid-track: #020617;
-    --pid-chip: #0f172a;
-    --pid-chip-active: #0c4a56;
-    --pid-border: #334155;
-    --pid-text: #e2e8f0;
-    --pid-active-text: #a5f3fc;
-    --pid-muted: #94a3b8;
-    --pid-dim: #64748b;
-    --pid-accent: #22d3ee;
-    --pid-actuator: #1e293b;
-    --pipe-primary: #38bdf8;
-    --pipe-secondary: #fb923c;
-    --flow-dash: #f8fafc;
-    --ok: #34d399;
-    --ok-soft: #6ee7b7;
-    --danger: #f87171;
-    --hx-a: #0b2a3a;
-    --hx-mid: #0f172a;
-    --hx-b: #3a1d0b;
+    --ok: 152 48% 58%;
+    --warn: 38 86% 62%;
+    --danger: 6 76% 62%;
+
+    --pid-track: #1a222d;
+    --pid-chip: #141b24;
+    --pid-chip-active: #17202b;
+    --pid-border: #2a3441;
+    --pid-text: #e8edf3;
+    --pid-active-text: #7fdbe9;
+    --pid-muted: #93a0b0;
+    --pid-dim: #7d8a9a;
+    --pid-accent: hsl(var(--primary));
+    --pid-actuator: #1d2733;
+    --pipe-primary: #5a9bc4;
+    --pipe-secondary: #c9834c;
+    --flow-dash: #0d1219;
   }
 
   * {
@@ -96,6 +102,34 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 图标统一一种笔画：lucide 默认 2，在 11–12px 的界面里偏重 */
+  .lucide {
+    stroke-width: 1.6;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background-color: hsl(var(--border));
   }
 }
 

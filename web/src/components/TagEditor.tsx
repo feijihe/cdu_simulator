@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertCircle, Save, X } from "lucide-react";
 import type { PointSample, SignalKind } from "@/lib/api";
 import { SIGNAL_LABEL } from "@/lib/api";
@@ -37,6 +37,14 @@ function defaultSignal(kind: SignalKind, engLo: number, engHi: number): [string,
 }
 
 const UNIT_PRESETS = ["bar", "PSI", "kPa", "MPa", "°C", "°F", "m3/h", "L/min", "L/s", "%"];
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <Label className="mb-1 block text-[10px] font-normal leading-4 text-muted-foreground">
+      {children}
+    </Label>
+  );
+}
 
 export default function TagEditor({ point, onClose }: Props) {
   const analog = point.kind === "AI" || point.kind === "AO";
@@ -131,71 +139,59 @@ export default function TagEditor({ point, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`编辑点位 ${point.id}`}
-        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card shadow-2xl"
+        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-border p-4">
-          <div>
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm text-foreground">{point.id}</span>
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <span className="font-mono text-[12px] text-foreground">{point.id}</span>
+              <span className="rounded-[4px] border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {point.kind}
               </span>
             </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">{point.desc}</div>
+            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{point.desc}</div>
             {point.place && (
-              <div className="mt-0.5 text-[10px] text-muted-foreground/80">
-                系统图位置：
+              <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                 {point.place.segment ??
                   `${point.place.loop ?? "?"} / ${point.place.branch ?? "?"}`}
-                {" / order "}
+                {" · order "}
                 {point.place.order}
               </div>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onClose}
-            aria-label="关闭"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="关闭">
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         <div className="flex flex-col gap-3 p-4">
           <div>
-            <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-              Modbus 地址（保持寄存器 / 线圈）
-            </Label>
+            <FieldLabel>Modbus 地址（保持寄存器 / 线圈）</FieldLabel>
             <Input
               value={addr}
               onChange={(e) => setAddr(e.target.value)}
               inputMode="numeric"
-              className="h-8 font-mono text-sm"
+              className="font-mono"
             />
           </div>
 
           {analog ? (
             <>
-              <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+              <div className="grid grid-cols-[1fr_1.4fr] gap-3">
                 <div>
-                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                    工程单位
-                  </Label>
+                  <FieldLabel>工程单位</FieldLabel>
                   <Input
                     list="unit-presets"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="h-8 text-sm"
                   />
                   <datalist id="unit-presets">
                     {UNIT_PRESETS.map((u) => (
@@ -203,38 +199,32 @@ export default function TagEditor({ point, onClose }: Props) {
                     ))}
                   </datalist>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                      量程下限
-                    </Label>
+                    <FieldLabel>量程下限</FieldLabel>
                     <Input
                       value={engMin}
                       onChange={(e) => setEngMin(e.target.value)}
                       inputMode="decimal"
-                      className="h-8 font-mono text-sm"
+                      className="font-mono"
                     />
                   </div>
                   <div>
-                    <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                      量程上限
-                    </Label>
+                    <FieldLabel>量程上限</FieldLabel>
                     <Input
                       value={engMax}
                       onChange={(e) => setEngMax(e.target.value)}
                       inputMode="decimal"
-                      className="h-8 font-mono text-sm"
+                      className="font-mono"
                     />
                   </div>
                 </div>
               </div>
 
               <div>
-                <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                  信号类型
-                </Label>
+                <FieldLabel>信号类型</FieldLabel>
                 <Select value={kind} onValueChange={(value) => changeKind(value as SignalKind)}>
-                  <SelectTrigger className="h-8 text-sm">
+                  <SelectTrigger className="h-8 text-[12px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -247,45 +237,41 @@ export default function TagEditor({ point, onClose }: Props) {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                    信号下限
-                  </Label>
+                  <FieldLabel>信号下限</FieldLabel>
                   <Input
                     value={sigMin}
                     onChange={(e) => setSigMin(e.target.value)}
                     inputMode="decimal"
-                    className="h-8 font-mono text-sm"
+                    className="font-mono"
                   />
                 </div>
                 <div>
-                  <Label className="mb-1 block text-[11px] font-normal text-muted-foreground">
-                    信号上限
-                  </Label>
+                  <FieldLabel>信号上限</FieldLabel>
                   <Input
                     value={sigMax}
                     onChange={(e) => setSigMax(e.target.value)}
                     inputMode="decimal"
-                    className="h-8 font-mono text-sm"
+                    className="font-mono"
                   />
                 </div>
               </div>
 
-              <div className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-                <div>
-                  换算：{Number(engMin) || 0}–{Number(engMax) || 0} {unit || "?"} ↔{" "}
+              <div className="rounded-md border border-border px-3 py-2 text-[10px] leading-5 text-muted-foreground">
+                <div className="font-mono tabular-nums">
+                  {Number(engMin) || 0}–{Number(engMax) || 0} {unit || "?"} ↔{" "}
                   {Number(sigMin) || 0}–{Number(sigMax) || 0}
                 </div>
                 <div>
-                  分辨率：1 count ≈{" "}
+                  1 count ≈{" "}
                   {Number.isFinite(resolution) ? resolution.toPrecision(3) : "?"} {unit || ""}
-                  {kind === "rtd" ? "（PT100 按 0.1 °C/count）" : ""}
+                  {kind === "rtd" ? "，PT100 按 0.1 °C/count" : ""}
                 </div>
               </div>
             </>
           ) : (
-            <div className="rounded-md border border-border bg-muted/40 px-2 py-2 text-[11px] text-muted-foreground">
+            <div className="rounded-md border border-border px-3 py-2 text-[11px] leading-5 text-muted-foreground">
               开关量走线圈区，没有工程量程和信号类型，只能改地址与在位状态。
             </div>
           )}
@@ -305,22 +291,22 @@ export default function TagEditor({ point, onClose }: Props) {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-300">
-              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div className="flex items-start gap-2 rounded-md border border-danger/30 px-3 py-2 text-[11px] text-danger">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-border p-3">
-          <span className="text-[10px] text-muted-foreground/80">保存到 config/overrides.yaml</span>
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
+          <span className="font-mono text-[10px] text-muted-foreground">保存到 overrides.yaml</span>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
               取消
             </Button>
             <Button size="sm" onClick={save} disabled={saving}>
-              <Save className="h-3.5 w-3.5" />
-              {saving ? "保存中…" : "保存"}
+              <Save className="h-4 w-4" />
+              {saving ? "保存中" : "保存"}
             </Button>
           </div>
         </div>

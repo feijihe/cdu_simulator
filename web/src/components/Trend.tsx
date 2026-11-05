@@ -1,5 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Tag } from "@/components/ui/badge";
 import type { PointSample } from "@/lib/api";
 import { displayValue, unitFor } from "@/lib/api";
 
@@ -10,7 +10,7 @@ interface Props {
 }
 
 const W = 320;
-const H = 96;
+const H = 88;
 const PAD = 6;
 
 export default function Trend({ point, history, mode }: Props) {
@@ -44,26 +44,28 @@ export default function Trend({ point, history, mode }: Props) {
   const area = history.length
     ? `${PAD},${H - PAD} ${line} ${x(history.length - 1).toFixed(1)},${H - PAD}`
     : "";
+  const last = history.at(-1);
+  const windowSeconds =
+    history.length > 1 && last ? Math.round((last.t - history[0].t) / 1000) : 0;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            趋势
-            {point && (
-              <Badge variant={point.present ? "default" : "outline"}>{point.id}</Badge>
-            )}
-          </CardTitle>
-          <span className="font-mono text-sm text-foreground">
-            {point ? displayValue(point, mode) : "—"}
-            <span className="ml-1 text-[10px] text-muted-foreground">{unitFor(point, mode)}</span>
-          </span>
+    <Card className="shrink-0">
+      <div className="flex h-9 items-center justify-between gap-2 px-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[12px] font-medium text-foreground">趋势</h2>
+          {point && <Tag tone={point.present ? "accent" : "muted"}>{point.id}</Tag>}
         </div>
-      </CardHeader>
-      <CardContent>
-        <svg viewBox={`0 0 ${W} ${H}`} className="h-24 w-full">
-          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-[15px] leading-5 tabular-nums text-foreground">
+            {point ? displayValue(point, mode) : "—"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">{unitFor(point, mode)}</span>
+        </div>
+      </div>
+
+      <div className="px-4 pb-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="h-[88px] w-full" aria-hidden="true">
+          {[0, 0.5, 1].map((f) => (
             <line
               key={f}
               x1={PAD}
@@ -74,31 +76,49 @@ export default function Trend({ point, history, mode }: Props) {
               strokeWidth={1}
             />
           ))}
-          {history.length > 1 && (
+
+          {history.length > 1 ? (
             <>
-              <polygon points={area} fill="var(--pid-accent)" opacity={0.08} />
+              <polygon points={area} fill="hsl(var(--primary))" opacity={0.08} />
               <polyline
                 points={line}
                 fill="none"
-                stroke="var(--pid-accent)"
-                strokeWidth={1.8}
+                stroke="hsl(var(--primary))"
+                strokeWidth={1.5}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
+              {last && (
+                <circle
+                  cx={x(history.length - 1)}
+                  cy={y(last.v)}
+                  r={2.5}
+                  fill="hsl(var(--primary))"
+                  stroke="hsl(var(--card))"
+                  strokeWidth={1.5}
+                />
+              )}
             </>
-          )}
-          {history.length <= 1 && (
-            <text x={W / 2} y={H / 2} textAnchor="middle" fontSize={10} fill="var(--pid-dim)">
-              等待数据…
+          ) : (
+            <text
+              x={W / 2}
+              y={H / 2 + 3}
+              textAnchor="middle"
+              fontSize={10}
+              fill="var(--pid-dim)"
+            >
+              等待数据
             </text>
           )}
         </svg>
-        <div className="flex justify-between font-mono text-[10px] text-muted-foreground/80">
-          <span>{lo.toFixed(1)}</span>
-          <span>{history.length} 点 · 约 {Math.round(history.length * 0.2)}s</span>
-          <span>{hi.toFixed(1)}</span>
+
+        <div className="flex items-baseline justify-between font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span>
+            {lo.toFixed(1)} – {hi.toFixed(1)} {point ? unitFor(point, mode) : ""}
+          </span>
+          <span>{windowSeconds > 0 ? `${windowSeconds} s 窗口` : "—"}</span>
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }
