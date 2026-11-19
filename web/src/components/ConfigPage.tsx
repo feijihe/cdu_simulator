@@ -519,7 +519,7 @@ export default function ConfigPage({ onBack, onApplied }: Props) {
           className="min-h-0 flex-1"
         >
           <ResizablePanel defaultSize={52} minSize={30}>
-            <div className="h-full overflow-auto p-4">
+            <div className="h-full min-h-0 overflow-auto p-4">
           {loading && <div className="text-xs text-muted-foreground">加载配置中…</div>}
           {loadError && (
             <div className="rounded border border-danger/30 bg-danger/10 p-3 text-xs text-danger">

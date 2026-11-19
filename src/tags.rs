@@ -759,6 +759,12 @@ pub fn write_overlay(path: &Path, table: &PointTable) -> Result<()> {
     };
     let body = serde_yaml::to_string(&overlay)?;
     let text = format!("# 由 Web 配置页生成；删除此文件可恢复原始 tags.yaml\n{body}");
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("创建 {} 失败", parent.display()))?;
+        }
+    }
     std::fs::write(path, text).with_context(|| format!("写入 {} 失败", path.display()))
 }
 
@@ -837,6 +843,21 @@ impl PointTable {
         Ok(table)
     }
 
+    /// 从 YAML 文本解析并叠加 overrides.yaml。用于内置点表。
+    pub fn parse_with_overlay(text: &str, overlay: &Path) -> Result<Self> {
+        let mut table = Self::parse(text)?;
+        if let Some(file) = read_overlay(overlay)? {
+            table.apply_overlay(file)?;
+            if let Some(topology) = table.topology.as_mut() {
+                topology.fill_defaults();
+            }
+            table
+                .validate()
+                .with_context(|| format!("应用 {} 后校验失败", overlay.display()))?;
+        }
+        Ok(table)
+    }
+
     /// 只读 tags.yaml，不叠加 overrides.yaml。
     pub fn load_plain(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
@@ -845,19 +866,11 @@ impl PointTable {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let mut table = Self::load_plain(path)?;
-
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("读取 {} 失败", path.display()))?;
         let ov_path = overrides_path(path);
-        if let Some(file) = read_overlay(&ov_path)? {
-            table.apply_overlay(file)?;
-            if let Some(topology) = table.topology.as_mut() {
-                topology.fill_defaults();
-            }
-            table
-                .validate()
-                .with_context(|| format!("应用 {} 后校验失败", ov_path.display()))?;
-        }
-        Ok(table)
+        Self::parse_with_overlay(&text, &ov_path)
+            .with_context(|| format!("解析 {} 失败", path.display()))
     }
 
     pub fn validate(&self) -> Result<()> {

@@ -12,16 +12,32 @@ CDU（冷量分配单元）模拟器：没有实机时，给 CDU 控制程序提
 ## 快速使用
 
 ```powershell
+pnpm --dir web install   # 只需一次，用于构建前端
 cargo build --release
 .\target\release\cdu-sim.exe
 ```
 
+`cargo build` 会通过 `build.rs` 自动执行 `pnpm --dir web build`，把 `web/dist` 和 `config/tags.yaml` 嵌入二进制。生成的 `cdu-sim.exe` 可以单独复制到任意目录直接运行，不需要带 `web/dist` 或配置文件。
+
 | 服务 | 默认地址 |
 |---|---|
 | Modbus TCP | `0.0.0.0:1502` |
-| Web 监控 | <http://127.0.0.1:8080> |
+| Web 监控 | <http://localhost:8080> |
 
-配置在 `config/tags.yaml`；网页上的修改保存到 `config/overrides.yaml`，叠加在原始配置之上。页面从 `web/dist` 读取，请在仓库根目录启动；前端改动后先执行 `pnpm --dir web build`。
+启动后终端会按 Vite 的风格列出 `Local` / `Network` 地址：`Local` 可直接 Ctrl+Click 打开，`Network` 给同一局域网里的控制程序或浏览器使用。
+
+配置来源：
+
+- 如果没有 `--config`，优先使用当前目录的 `config/tags.yaml`；没有这个文件就用内置配置（启动日志显示 `config 内置`）。
+- 网页配置页/点位编辑保存到当前目录 `config/overrides.yaml`，叠加在内置或外部配置之上；删除它可恢复。
+- 想强制使用外部配置：`.\cdu-sim.exe --config D:\path\tags.yaml`。
+
+如果前端已经单独构建好，可以跳过 build.rs 里的 pnpm 构建：
+
+```powershell
+$env:CDU_SKIP_WEB_BUILD=1
+cargo build --release
+```
 
 前端开发模式：`pnpm --dir web dev`，默认 <http://localhost:5273/>（5173 被 Windows 保留端口段占用），`/api` 和 `/ws` 代理到 8080，需要同时运行 `cdu-sim`。
 
@@ -29,7 +45,7 @@ cargo build --release
 
 | 参数 | 说明 |
 |---|---|
-| `-c, --config <file>` | 点表文件，默认 `config/tags.yaml` |
+| `-c, --config <file>` | 点表文件；省略时优先 `config/tags.yaml`，没有则用内置点表 |
 | `--bind <addr>` / `--http <addr>` | Modbus / Web 监听地址 |
 | `--dump-points` | 打印拓扑和点表后退出，用于核对配置 |
 | `--no-noise` | 关闭传感器噪声（测试用） |

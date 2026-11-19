@@ -4,18 +4,23 @@ use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use rust_embed::RustEmbed;
 use serde_json::json;
-use tower_http::services::{ServeDir, ServeFile};
 
 use crate::state::{SimState, TagPatch};
 use crate::tags::PointTable;
 use serde::Deserialize;
 
 type AppState = Arc<RwLock<SimState>>;
+
+/// 前端构建产物在编译时嵌入二进制，运行时不依赖 web/dist。
+#[derive(RustEmbed)]
+#[folder = "web/dist/"]
+struct WebAssets;
 
 #[derive(Debug, Deserialize)]
 struct PointPatch {
@@ -35,7 +40,14 @@ struct BoundaryPatch {
     ua_kw_per_k: Option<f64>,
 }
 
-pub fn serve(addr: SocketAddr, state: AppState) -> std::io::Result<()> {
+/// 先同步绑定端口，启动信息才能拿到实际端口，也能在打印前发现占用。
+pub fn bind(addr: SocketAddr) -> std::io::Result<std::net::TcpListener> {
+    let listener = std::net::TcpListener::bind(addr)?;
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
+pub fn serve(listener: std::net::TcpListener, state: AppState) -> std::io::Result<()> {
     let app = Router::new()
         .route("/api/points", get(points))
         .route("/api/topology", get(topology))
@@ -45,15 +57,12 @@ pub fn serve(addr: SocketAddr, state: AppState) -> std::io::Result<()> {
         .route("/api/plant", put(put_boundary).delete(clear_boundary))
         .route("/api/tags/{id}", put(patch_tag))
         .route("/ws", get(ws))
-        .fallback_service(
-            ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html")),
-        )
+        .fallback(static_assets)
         .with_state(state);
 
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        eprintln!("[http] listening on http://{addr}");
+        let listener = tokio::net::TcpListener::from_std(listener)?;
         axum::serve(listener, app).await
     })
 }
@@ -137,18 +146,13 @@ async fn put_point(
 
     match result {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))).into_response(),
-        Err(message) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": message })),
-        )
-            .into_response(),
+        Err(message) => {
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))).into_response()
+        }
     }
 }
 
-async fn put_boundary(
-    State(state): State<AppState>,
-    Json(patch): Json<BoundaryPatch>,
-) -> Response {
+async fn put_boundary(State(state): State<AppState>, Json(patch): Json<BoundaryPatch>) -> Response {
     state
         .write()
         .unwrap()
@@ -161,18 +165,17 @@ async fn clear_boundary(State(state): State<AppState>) -> Response {
     (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
 }
 
-async fn patch_tag(    Path(id): Path<String>,
+async fn patch_tag(
+    Path(id): Path<String>,
     State(state): State<AppState>,
     Json(patch): Json<TagPatch>,
 ) -> Response {
     let result = state.write().unwrap().patch_tag(&id, patch);
     match result {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true }))).into_response(),
-        Err(message) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": message })),
-        )
-            .into_response(),
+        Err(message) => {
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))).into_response()
+        }
     }
 }
 
@@ -202,4 +205,45 @@ async fn push_loop(mut socket: WebSocket, state: AppState) {
             }
         }
     }
+}
+
+async fn static_assets(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    if path.starts_with("api/") || path == "ws" {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let path = if path.is_empty() { "index.html" } else { path };
+
+    if let Some(asset) = WebAssets::get(path) {
+        return asset_response(path, asset.data.into_owned());
+    }
+    // 带扩展名的静态资源缺失时直接 404，不要把 index.html 当 JS/CSS 返回。
+    if path.contains('.') {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match WebAssets::get("index.html") {
+        Some(asset) => asset_response("index.html", asset.data.into_owned()),
+        None => (
+            StatusCode::NOT_FOUND,
+            "前端资源未嵌入：请先运行 pnpm --dir web build 再 cargo build",
+        )
+            .into_response(),
+    }
+}
+
+fn asset_response(path: &str, data: Vec<u8>) -> Response {
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    let cache = if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    (
+        [
+            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CACHE_CONTROL, cache.to_string()),
+        ],
+        data,
+    )
+        .into_response()
 }

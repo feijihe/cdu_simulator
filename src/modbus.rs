@@ -9,8 +9,11 @@ use anyhow::{Context, Result};
 use crate::state::SimState;
 use crate::tags::Area;
 
-pub fn serve(addr: SocketAddr, state: Arc<RwLock<SimState>>) -> Result<()> {
-    let listener = TcpListener::bind(addr).with_context(|| format!("监听 {addr} 失败"))?;
+pub fn bind(addr: SocketAddr) -> Result<TcpListener> {
+    TcpListener::bind(addr).with_context(|| format!("监听 {addr} 失败"))
+}
+
+pub fn serve(listener: TcpListener, state: Arc<RwLock<SimState>>) -> Result<()> {
     for incoming in listener.incoming() {
         match incoming {
             Ok(stream) => {
@@ -149,7 +152,11 @@ fn write_single_coil(body: &[u8], state: &RwLock<SimState>) -> Vec<u8> {
         _ => return exception(0x05, 0x03),
     };
 
-    match state.write().unwrap().write_bits(Area::Coil, addr, &[value]) {
+    match state
+        .write()
+        .unwrap()
+        .write_bits(Area::Coil, addr, &[value])
+    {
         Ok(()) => vec![0x05, body[0], body[1], body[2], body[3]],
         Err(code) => exception(0x05, code),
     }
@@ -162,7 +169,11 @@ fn write_single_reg(body: &[u8], state: &RwLock<SimState>) -> Vec<u8> {
     let addr = u16::from_be_bytes([body[0], body[1]]);
     let value = u16::from_be_bytes([body[2], body[3]]);
 
-    match state.write().unwrap().write_regs(Area::Holding, addr, &[value]) {
+    match state
+        .write()
+        .unwrap()
+        .write_regs(Area::Holding, addr, &[value])
+    {
         Ok(()) => vec![0x06, body[0], body[1], body[2], body[3]],
         Err(code) => exception(0x06, code),
     }
