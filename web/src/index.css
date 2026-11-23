@@ -132,9 +132,3 @@
     background-color: hsl(var(--border));
   }
 }
-
-@keyframes rot {
-  to {
-    transform: rotate(360deg);
-  }
-}

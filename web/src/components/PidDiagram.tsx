@@ -289,6 +289,46 @@ function ValveSymbol({
   );
 }
 
+/** 产品图标集里的水泵图标（28.35×28.35），三态取自 replace/ 下的 未運作·運作中·異常。 */
+const PUMP_ICON = {
+  /** 未運作 / 運作中 共用的底板 */
+  tile: "M2.83.5h22.68c1.29,0,2.33,1.05,2.33,2.33v22.68c0,1.29-1.05,2.33-2.33,2.33H2.83c-1.29,0-2.33-1.05-2.33-2.33V2.83C.5,1.55,1.55.5,2.83.5Z",
+  /** 底板描边（内侧那一圈） */
+  frame:
+    "M25.51,1c1.01,0,1.83.82,1.83,1.83v22.68c0,1.01-.82,1.83-1.83,1.83H2.83c-1.01,0-1.83-.82-1.83-1.83V2.83c0-1.01.82-1.83,1.83-1.83h22.68M25.51,0H2.83C1.28,0,0,1.28,0,2.83v22.68c0,1.56,1.28,2.83,2.83,2.83h22.68c1.56,0,2.83-1.28,2.83-2.83V2.83c0-1.56-1.28-2.83-2.83-2.83h0Z",
+  /** 蜗壳 + 出口 */
+  volute:
+    "M22.68,5.41v7.13h-2.48c-.11,3.73-3.16,6.72-6.92,6.72s-6.93-3.1-6.93-6.93,3.1-6.93,6.93-6.93h9.4Z",
+  /** 底座 */
+  stand:
+    "M9.5,18.38l-3.68,3.68c-.32.32-.09.88.36.88h14.67c.46,0,.69-.55.36-.88l-3.89-3.89",
+};
+
+/** 图标在系统图里的落位边长（用户单位）。原素材 28.35，放到 30 视觉上和之前的圆一致。 */
+const PUMP_SIZE = 30;
+
+function PumpGlyph({ running, fault }: { running: boolean; fault: boolean }) {
+  // 底板跟随系统图配色（--pid-chip / --pid-border），不再用素材的纯白块：
+  // 白底在深色系统图里过于抢眼。状态改由墨色表达 —— 停机暗、运行亮、异常红。
+  const ink = fault
+    ? "hsl(var(--danger))"
+    : running
+      ? "var(--pid-text)"
+      : "var(--pid-dim)";
+  return (
+    <>
+      {fault ? (
+        <rect width="28.35" height="28.35" rx="2.83" fill="hsl(var(--danger) / 0.14)" />
+      ) : (
+        <path d={PUMP_ICON.tile} fill="var(--pid-chip)" />
+      )}
+      <path d={PUMP_ICON.frame} fill={fault ? "hsl(var(--danger) / 0.6)" : "var(--pid-border)"} />
+      <path d={PUMP_ICON.volute} fill="none" stroke={ink} strokeLinecap="round" strokeMiterlimit={10} />
+      <path d={PUMP_ICON.stand} fill="none" stroke={ink} strokeLinecap="round" strokeMiterlimit={10} />
+    </>
+  );
+}
+
 function Pump({
   x,
   y,
@@ -304,33 +344,14 @@ function Pump({
   label: string;
   labelAbove?: boolean;
 }) {
-  const color = fault ? "var(--danger)" : running ? "var(--ok)" : "var(--pid-dim)";
   return (
     <g>
-      <circle cx={x} cy={y} r={15} fill="var(--pid-chip)" stroke={color} strokeWidth={2} />
       <g
-        style={{
-          transformBox: "fill-box",
-          transformOrigin: "center",
-          animation: running ? "rot 2.4s linear infinite" : undefined,
-        }}
+        transform={`translate(${x - PUMP_SIZE / 2} ${y - PUMP_SIZE / 2}) scale(${
+          PUMP_SIZE / 28.35
+        })`}
       >
-        <line
-          x1={x - 9}
-          y1={y}
-          x2={x + 9}
-          y2={y}
-          stroke={running ? "var(--ok)" : "var(--pid-dim)"}
-          strokeWidth={1.5}
-        />
-        <line
-          x1={x}
-          y1={y - 9}
-          x2={x}
-          y2={y + 9}
-          stroke={running ? "var(--ok)" : "var(--pid-dim)"}
-          strokeWidth={1.5}
-        />
+        <PumpGlyph running={running} fault={fault} />
       </g>
       <text
         x={x}
@@ -347,7 +368,7 @@ function Pump({
           y={y + (labelAbove ? 30 : -20)}
           textAnchor="middle"
           fontSize={10}
-          fill="var(--danger)"
+          fill="hsl(var(--danger))"
         >
           故障
         </text>
@@ -690,11 +711,11 @@ export default function PidDiagram({
         <text x={108} y={0}>
           二次侧
         </text>
-        <circle cx={172} cy={-4} r={3.5} fill="var(--ok)" />
+        <circle cx={172} cy={-4} r={3.5} fill="hsl(var(--ok))" />
         <text x={182} y={0}>
           运行
         </text>
-        <circle cx={228} cy={-4} r={3.5} fill="var(--danger)" />
+        <circle cx={228} cy={-4} r={3.5} fill="hsl(var(--danger))" />
         <text x={238} y={0}>
           故障
         </text>
