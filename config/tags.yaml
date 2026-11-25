@@ -89,7 +89,7 @@ tags:
     presence: optional
     present: true
     place: { segment: p_in, order: 10 }
-    modbus: { fc: 3, addr: 100 }
+    modbus: { fc: 3, addr: 3396 }
 
   - id: P11
     desc: 一次侧进口压力（柜内）
@@ -97,7 +97,7 @@ tags:
     unit: PSI
     range: [0, 150]
     place: { segment: p_in, order: 20 }
-    modbus: { fc: 3, addr: 101 }
+    modbus: { fc: 3, addr: 3392 }
 
   - id: Q1
     desc: 一次侧流量
@@ -106,23 +106,25 @@ tags:
     range: [0, 300]
     noise_sigma: 0.15
     place: { segment: p_in, order: 30 }
-    modbus: { fc: 3, addr: 102 }
+    modbus: { fc: 3, addr: 3397 }
 
   - id: T11
     desc: 一次侧进水温度（板换进口）
     kind: ai
     unit: "°C"
     range: [0, 80]
+    signal: { kind: rtd, range: [0, 800] }
     place: { segment: p_in, order: 40 }
-    modbus: { fc: 3, addr: 103 }
+    modbus: { fc: 3, addr: 3328 }
 
   - id: T12
     desc: 一次侧出水温度（板换出口）
     kind: ai
     unit: "°C"
     range: [0, 80]
+    signal: { kind: rtd, range: [0, 800] }
     place: { segment: p_out, order: 10 }
-    modbus: { fc: 3, addr: 104 }
+    modbus: { fc: 3, addr: 3329 }
 
   - id: P12
     desc: 一次侧出口压力（柜内，阀后）
@@ -130,17 +132,7 @@ tags:
     unit: PSI
     range: [0, 150]
     place: { segment: p_out, order: 20 }
-    modbus: { fc: 3, addr: 105 }
-
-  - id: P13
-    desc: 一次侧出口压力（外接，选装）
-    kind: ai
-    unit: PSI
-    range: [0, 150]
-    presence: optional
-    present: true
-    place: { segment: p_out, order: 30 }
-    modbus: { fc: 3, addr: 106 }
+    modbus: { fc: 3, addr: 3393 }
 
   # ---------------- 二次侧 ----------------
   - id: P20
@@ -151,7 +143,7 @@ tags:
     presence: optional
     present: true
     place: { segment: s_in, order: 10 }
-    modbus: { fc: 3, addr: 107 }
+    modbus: { fc: 3, addr: 3400 }
 
   - id: P21
     desc: 二次侧回水压力（柜内，板换前）
@@ -159,7 +151,7 @@ tags:
     unit: PSI
     range: [0, 150]
     place: { segment: s_in, order: 20 }
-    modbus: { fc: 3, addr: 108 }
+    modbus: { fc: 3, addr: 3394 }
 
   - id: Q2
     desc: 二次侧流量
@@ -168,15 +160,16 @@ tags:
     range: [0, 300]
     noise_sigma: 0.15
     place: { segment: s_in, order: 30 }
-    modbus: { fc: 3, addr: 109 }
+    modbus: { fc: 3, addr: 3398 }
 
   - id: T21
     desc: 二次侧回水温度（板换进口）
     kind: ai
     unit: "°C"
     range: [0, 80]
+    signal: { kind: rtd, range: [0, 800] }
     place: { segment: s_in, order: 40 }
-    modbus: { fc: 3, addr: 110 }
+    modbus: { fc: 3, addr: 3330 }
 
   - id: PH
     desc: 二次侧 pH（选配）
@@ -186,15 +179,16 @@ tags:
     presence: optional
     present: false
     place: { segment: s_in, order: 50 }
-    modbus: { fc: 3, addr: 115 }
+    modbus: { fc: 3, addr: 3399 }
 
   - id: T22
     desc: 二次侧供液温度（主控量）
     kind: ai
     unit: "°C"
     range: [0, 80]
+    signal: { kind: rtd, range: [0, 800] }
     place: { segment: s_out, order: 10 }
-    modbus: { fc: 3, addr: 111 }
+    modbus: { fc: 3, addr: 3331 }
 
   - id: P22
     desc: 二次侧供液压力（柜内）
@@ -202,17 +196,7 @@ tags:
     unit: PSI
     range: [0, 150]
     place: { segment: s_out, order: 20 }
-    modbus: { fc: 3, addr: 112 }
-
-  - id: P23
-    desc: 二次侧供液压力（外接，选装）
-    kind: ai
-    unit: PSI
-    range: [0, 150]
-    presence: optional
-    present: true
-    place: { segment: s_out, order: 30 }
-    modbus: { fc: 3, addr: 113 }
+    modbus: { fc: 3, addr: 3395 }
 
   # ---------------- 执行器反馈 ----------------
   - id: LEVEL
@@ -235,7 +219,7 @@ tags:
     kind: ao
     unit: "%"
     range: [0, 100]
-    modbus: { fc: 3, addr: 200 }
+    modbus: { fc: 3, addr: 3456 }
     initial: 100
     writable: true
 
@@ -244,7 +228,7 @@ tags:
     kind: ao
     unit: "%"
     range: [0, 100]
-    modbus: { fc: 3, addr: 201 }
+    modbus: { fc: 3, addr: 2192 }
     writable: true
 
   - id: PUMP2_SPEED_CMD
@@ -252,7 +236,7 @@ tags:
     kind: ao
     unit: "%"
     range: [0, 100]
-    modbus: { fc: 3, addr: 202 }
+    modbus: { fc: 3, addr: 2193 }
     writable: true
 
   # ---------------- 开关量 ----------------
